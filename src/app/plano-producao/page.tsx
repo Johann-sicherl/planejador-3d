@@ -57,6 +57,7 @@ type OptionsPayload = {
   filamentos: OptionItem[];
   pedidos: OptionItem[];
   execucoes: OptionItem[];
+  planoProducao: OptionItem[];
 };
 
 type FormState = {
@@ -184,18 +185,40 @@ export default function PlanoProducaoPage() {
   }, []);
 
   const nomes = useMemo(() => {
+    const pedidos = new Map<number, string>();
+    const clientes = new Map<number, string>();
     const impressoras = new Map<number, string>();
     const arquivos3mf = new Map<number, string>();
+    const componentes = new Map<number, string>();
+    const filamentos = new Map<number, string>();
+
+    for (const item of options?.clientes || []) {
+      clientes.set(Number(item.id_cliente), String(item.nome_cliente || item.cliente || "Cliente sem nome"));
+    }
 
     for (const item of options?.impressoras || []) {
-      impressoras.set(Number(item.id_impressora), String(item.nome_impressora || ""));
+      impressoras.set(Number(item.id_impressora), String(item.nome_impressora || item.nome || "Impressora sem nome"));
     }
 
     for (const item of options?.arquivos3mf || []) {
-      arquivos3mf.set(Number(item.id_3mf), String(item.nome_arquivo_3mf || ""));
+      arquivos3mf.set(Number(item.id_3mf), String(item.nome_arquivo_3mf || item.nome_arquivo || item.filename || "Arquivo 3MF sem nome"));
     }
 
-    return { impressoras, arquivos3mf };
+    for (const item of options?.componentes || []) {
+      componentes.set(Number(item.id_componente_stl), String(item.nome_componente || item.codigo_componente || item.descricao || "Componente sem nome"));
+    }
+
+    for (const item of options?.filamentos || []) {
+      filamentos.set(Number(item.id_filamento), String(item.nome_filamento || item.cor || item.material || "Filamento sem nome"));
+    }
+
+    for (const item of options?.pedidos || []) {
+      const id = Number(item.id_pedido);
+      const label = String(item.label_pedido || item.nome_pedido || item.numero_pedido || "").trim();
+      pedidos.set(id, label || "Pedido cadastrado");
+    }
+
+    return { pedidos, clientes, impressoras, arquivos3mf, componentes, filamentos };
   }, [options]);
 
   function novoPlano() {
@@ -266,7 +289,7 @@ export default function PlanoProducaoPage() {
   }
 
   async function excluirPlano(idPedido: number) {
-    const confirmar = window.confirm(`Excluir o pedido ${idPedido} do plano de produção?`);
+    const confirmar = window.confirm(`Excluir este pedido do plano de produção?`);
     if (!confirmar) return;
 
     try {
@@ -379,7 +402,7 @@ export default function PlanoProducaoPage() {
             </button>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <Field label="Pedido">
               <select
                 value={form.id_pedido}
@@ -391,7 +414,7 @@ export default function PlanoProducaoPage() {
                 <option value="">Selecione</option>
                 {(options?.pedidos || []).map((pedido) => (
                   <option key={String(pedido.id_pedido)} value={String(pedido.id_pedido)}>
-                    Pedido {String(pedido.id_pedido)}
+                    {String(pedido.label_pedido || pedido.nome_pedido || pedido.numero_pedido || "Pedido cadastrado")}
                   </option>
                 ))}
               </select>
@@ -575,6 +598,10 @@ export default function PlanoProducaoPage() {
           opacity: 0.55;
           cursor: not-allowed;
         }
+        .field option {
+          background: #020617;
+          color: #f8fafc;
+        }
       `}</style>
     </PageShell>
   );
@@ -614,7 +641,7 @@ function ColunaProducao({
   subtitulo: string;
   detalhe: string;
   planos: PlanoProducao[];
-  nomes: { impressoras: Map<number, string>; arquivos3mf: Map<number, string> };
+  nomes: { pedidos: Map<number, string>; clientes: Map<number, string>; impressoras: Map<number, string>; arquivos3mf: Map<number, string>; componentes: Map<number, string>; filamentos: Map<number, string> };
   onEdit: (plano: PlanoProducao) => void;
   onDelete: (idPedido: number) => void;
 }) {
@@ -663,7 +690,7 @@ function CardPlano({
   onDelete,
 }: {
   plano: PlanoProducao;
-  nomes: { impressoras: Map<number, string>; arquivos3mf: Map<number, string> };
+  nomes: { pedidos: Map<number, string>; clientes: Map<number, string>; impressoras: Map<number, string>; arquivos3mf: Map<number, string>; componentes: Map<number, string>; filamentos: Map<number, string> };
   flutuando?: boolean;
   onEdit?: (plano: PlanoProducao) => void;
   onDelete?: (idPedido: number) => void;
@@ -702,7 +729,7 @@ function CardPlano({
         <div>
           <div className="flex items-center gap-2">
             <Package className="h-4 w-4 text-cyan-400" />
-            <h3 className="font-black text-white">Pedido {plano.id_pedido}</h3>
+            <h3 className="font-black text-white">{nomes.pedidos.get(plano.id_pedido) || "Pedido cadastrado"}</h3>
             {status === "finalizado" && <CheckCircle2 className="h-4 w-4 text-emerald-400" />}
           </div>
           <p className="mt-2 text-xs text-slate-400">Ordem: {plano.ordem_fila ?? "--"}</p>
