@@ -1,189 +1,368 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { ActionButtons, Feedback, getJson, LoadingOrEmpty, NumberOrBlank, PageShell, useAuthGuard, useCrudList } from "../_shared";
+import { useState } from "react";
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDroppable,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
+  CheckCircle2,
+  Clock,
+  Factory,
+  GripVertical,
+  Package,
+  Printer,
+  User,
+} from "lucide-react";
+import { PageShell, GlassCard } from "../_shared";
 
-type Registro = Record<string, string | number | null>;
+type StatusProducao = "pedidos" | "fila" | "producao" | "finalizado";
 
-export default function Page() {
-  const { ready } = useAuthGuard();
-  const { data, loading, erro, setErro, reload } = useCrudList<Registro>("/api/plano-producao");
-  const [options, setOptions] = useState<any>(null);
-  const [salvando, setSalvando] = useState(false);
-  const [mensagem, setMensagem] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [id_pedido, setId_pedido] = useState("");
-  const [id_impressora, setId_impressora] = useState("");
-  const [id_3mf, setId_3mf] = useState("");
-  const [tempo_impressao_min, setTempo_impressao_min] = useState("");
+type ItemPedido = {
+  id: string;
+  descricao: string;
+  quantidade: number;
+  material: string;
+};
 
-  useEffect(() => {
-getJson<any>("/api/options").then((r) => setOptions(r[0] || null)).catch(() => {});
-  }, []);
+type PedidoCard = {
+  id: string;
+  numeroPedido: string;
+  cliente: string;
+  prioridade: "Baixa" | "Média" | "Alta" | "Urgente";
+  status: StatusProducao;
+  impressora?: string;
+  tempoEstimado: string;
+  pesoEstimado: string;
+  progresso?: number;
+  itens: ItemPedido[];
+};
 
-  function resetForm() {
-    setEditingId(null);
-    setId_pedido("");
-    setId_impressora("");
-    setId_3mf("");
-    setTempo_impressao_min("");
+const colunas: {
+  id: StatusProducao;
+  titulo: string;
+  subtitulo: string;
+  detalhe: string;
+}[] = [
+  {
+    id: "pedidos",
+    titulo: "Pedidos cadastrados",
+    subtitulo: "Pedidos ainda não programados",
+    detalhe: "border-t-cyan-400",
+  },
+  {
+    id: "fila",
+    titulo: "Fila de produção",
+    subtitulo: "Ordem planejada de fabricação",
+    detalhe: "border-t-violet-400",
+  },
+  {
+    id: "producao",
+    titulo: "Em produção",
+    subtitulo: "Peças em execução",
+    detalhe: "border-t-amber-400",
+  },
+  {
+    id: "finalizado",
+    titulo: "Finalizado",
+    subtitulo: "Pedidos concluídos",
+    detalhe: "border-t-emerald-400",
+  },
+];
+
+const pedidosMock: PedidoCard[] = [
+  {
+    id: "pedido-001",
+    numeroPedido: "PED-0012",
+    cliente: "Tech Solutions",
+    prioridade: "Alta",
+    status: "pedidos",
+    impressora: "Bambu Lab P1S",
+    tempoEstimado: "7h 30min",
+    pesoEstimado: "320 g",
+    itens: [
+      { id: "item-001", descricao: "Suporte estrutural", quantidade: 4, material: "PETG Preto" },
+      { id: "item-002", descricao: "Tampa frontal", quantidade: 2, material: "PLA Branco" },
+    ],
+  },
+  {
+    id: "pedido-002",
+    numeroPedido: "PED-0015",
+    cliente: "Clínica MedTech",
+    prioridade: "Urgente",
+    status: "fila",
+    impressora: "Bambu Lab P1S",
+    tempoEstimado: "8h 45min",
+    pesoEstimado: "450 g",
+    itens: [
+      { id: "item-003", descricao: "Protetor facial", quantidade: 10, material: "PETG Transparente" },
+      { id: "item-004", descricao: "Ajuste lateral", quantidade: 6, material: "PETG Preto" },
+    ],
+  },
+  {
+    id: "pedido-003",
+    numeroPedido: "PED-0010",
+    cliente: "Tech Solutions",
+    prioridade: "Média",
+    status: "producao",
+    impressora: "Bambu Lab P1S",
+    tempoEstimado: "7h 30min",
+    pesoEstimado: "320 g",
+    progresso: 65,
+    itens: [
+      { id: "item-005", descricao: "Suporte estrutural", quantidade: 4, material: "PETG Preto" },
+      { id: "item-006", descricao: "Tampa frontal", quantidade: 2, material: "PLA Branco" },
+    ],
+  },
+  {
+    id: "pedido-004",
+    numeroPedido: "PED-0008",
+    cliente: "Print Store",
+    prioridade: "Baixa",
+    status: "finalizado",
+    impressora: "Ender 3 S1",
+    tempoEstimado: "2h 45min",
+    pesoEstimado: "150 g",
+    progresso: 100,
+    itens: [
+      { id: "item-007", descricao: "Organizador de mesa", quantidade: 4, material: "PLA Branco" },
+      { id: "item-008", descricao: "Suporte celular", quantidade: 2, material: "PLA Branco" },
+    ],
+  },
+];
+
+export default function PlanoProducaoPage() {
+  const [pedidos, setPedidos] = useState<PedidoCard[]>(pedidosMock);
+  const [activePedido, setActivePedido] = useState<PedidoCard | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    })
+  );
+
+  function handleDragStart(event: DragStartEvent) {
+    const pedido = pedidos.find((p) => p.id === event.active.id);
+    if (pedido) setActivePedido(pedido);
   }
 
-  function fillForEdit(row: Registro) {
-    setEditingId(String(row["id_pedido"] ?? ""));
-    setId_pedido(String(row["id_pedido"] ?? ""));
-    setId_impressora(String(row["id_impressora"] ?? ""));
-    setId_3mf(String(row["id_3mf"] ?? ""));
-    setTempo_impressao_min(String(row["tempo_impressao_min"] ?? ""));
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    setActivePedido(null);
+
+    if (!over) return;
+
+    const pedidoId = String(active.id);
+    const destino = String(over.id) as StatusProducao;
+    const colunaDestino = colunas.some((coluna) => coluna.id === destino);
+
+    if (!colunaDestino) return;
+
+    setPedidos((pedidosAtuais) =>
+      pedidosAtuais.map((pedido) =>
+        pedido.id === pedidoId
+          ? {
+              ...pedido,
+              status: destino,
+              progresso: destino === "finalizado" ? 100 : pedido.progresso,
+            }
+          : pedido
+      )
+    );
   }
-
-  async function handleDelete(id: string) {
-    if (!confirm("Deseja realmente excluir este registro?")) return;
-    try {
-      setErro("");
-      setMensagem("");
-      const response = await fetch("/api/plano-producao?id=" + id, { method: "DELETE" });
-      const result = await response.json();
-      if (!response.ok || !result.ok) throw new Error(result.error || "Erro ao excluir.");
-      setMensagem("Registro excluído com sucesso.");
-      if (editingId === id) resetForm();
-      await reload();
-    } catch (err) {
-      setErro(err instanceof Error ? err.message : "Erro ao excluir.");
-    }
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    try {
-      setSalvando(true);
-      setErro("");
-      setMensagem("");
-
-      const payload: Record<string, unknown> = {
-        id_pedido: id_pedido === "" ? null : Number(id_pedido),
-        id_impressora: id_impressora === "" ? null : Number(id_impressora),
-        id_3mf: id_3mf === "" ? null : Number(id_3mf),
-        tempo_impressao_min: NumberOrBlank(tempo_impressao_min),
-      };
-
-      const method = editingId ? "PUT" : "POST";
-      if (editingId) payload["id_pedido"] = Number(editingId);
-
-      const response = await fetch("/api/plano-producao", {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const result = await response.json();
-      if (!response.ok || !result.ok) throw new Error(result.error || "Erro ao salvar.");
-      setMensagem(editingId ? "Registro atualizado com sucesso." : "Registro salvo com sucesso.");
-      resetForm();
-      await reload();
-    } catch (err) {
-      setErro(err instanceof Error ? err.message : "Erro ao salvar.");
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  if (!ready) return <main className="min-h-screen p-8">Carregando...</main>;
 
   return (
-    <PageShell title="Plano de Produção" description="Planejamento de produção por pedido.">
-      <div className="grid gap-6 xl:grid-cols-[520px_1fr]">
-        <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <h2 className="text-xl font-semibold text-black">{editingId ? "Editar registro" : "Novo registro"}</h2>
-          <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-black">Pedido</label>
-              <select value={id_pedido} onChange={(e) => setId_pedido(e.target.value)} className="w-full rounded-xl border border-zinc-300 px-3 py-2 text-black outline-none focus:border-zinc-500">
-                <option value="">Selecione</option>
-                {(options?.pedidos || []).map((item: any) => (
-                  <option key={String(item[Object.keys(item)[0]])} value={String(item[Object.keys(item)[0]])}>
-                    {String(item[Object.keys(item)[0]])} - {String(item[Object.keys(item)[1]] ?? item[Object.keys(item)[0]])}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-black">Impressora</label>
-              <select value={id_impressora} onChange={(e) => setId_impressora(e.target.value)} className="w-full rounded-xl border border-zinc-300 px-3 py-2 text-black outline-none focus:border-zinc-500">
-                <option value="">Selecione</option>
-                {(options?.impressoras || []).map((item: any) => (
-                  <option key={String(item[Object.keys(item)[0]])} value={String(item[Object.keys(item)[0]])}>
-                    {String(item[Object.keys(item)[0]])} - {String(item[Object.keys(item)[1]] ?? item[Object.keys(item)[0]])}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-black">Arquivo 3MF</label>
-              <select value={id_3mf} onChange={(e) => setId_3mf(e.target.value)} className="w-full rounded-xl border border-zinc-300 px-3 py-2 text-black outline-none focus:border-zinc-500">
-                <option value="">Selecione</option>
-                {(options?.arquivos3mf || []).map((item: any) => (
-                  <option key={String(item[Object.keys(item)[0]])} value={String(item[Object.keys(item)[0]])}>
-                    {String(item[Object.keys(item)[0]])} - {String(item[Object.keys(item)[1]] ?? item[Object.keys(item)[0]])}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-black">Tempo de impressão em minutos</label>
-              <input type="number" value={tempo_impressao_min} onChange={(e) => setTempo_impressao_min(e.target.value)} className="w-full rounded-xl border border-zinc-300 px-3 py-2 text-black outline-none focus:border-zinc-500" placeholder="Tempo de impressão em minutos" />
-            </div>
-            <Feedback erro={erro} mensagem={mensagem} />
-            <div className="flex gap-2">
-              <button type="submit" disabled={salvando} className="flex-1 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60">
-                {salvando ? "Salvando..." : editingId ? "Atualizar" : "Salvar"}
-              </button>
-              {editingId && (
-                <button type="button" onClick={resetForm} className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-medium text-black hover:bg-zinc-50">
-                  Cancelar
-                </button>
-              )}
-            </div>
-          </form>
+    <PageShell
+      title="Plano de Produção"
+      description="Organize os pedidos em uma fila visual, arraste os cards entre etapas e acompanhe a execução da produção."
+    >
+      <div className="grid gap-4 md:grid-cols-4">
+        <Indicador titulo="Pedidos cadastrados" valor={String(pedidos.length)} subtitulo="Total no plano" />
+        <Indicador titulo="Na fila" valor={String(pedidos.filter((p) => p.status === "fila").length)} subtitulo="Aguardando produção" />
+        <Indicador titulo="Em produção" valor={String(pedidos.filter((p) => p.status === "producao").length)} subtitulo="Produzindo agora" />
+        <Indicador titulo="Finalizados" valor={String(pedidos.filter((p) => p.status === "finalizado").length)} subtitulo="Concluídos" />
+      </div>
+
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <section className="grid gap-5 xl:grid-cols-4">
+          {colunas.map((coluna) => {
+            const pedidosDaColuna = pedidos.filter((pedido) => pedido.status === coluna.id);
+
+            return (
+              <ColunaProducao
+                key={coluna.id}
+                id={coluna.id}
+                titulo={coluna.titulo}
+                subtitulo={coluna.subtitulo}
+                detalhe={coluna.detalhe}
+                pedidos={pedidosDaColuna}
+              />
+            );
+          })}
         </section>
 
-        <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
-            <h2 className="text-xl font-semibold text-black">Lista</h2>
-            <button onClick={reload} className="rounded-xl border border-zinc-300 px-3 py-2 text-sm font-medium text-black hover:bg-zinc-50">
-              Atualizar
-            </button>
-          </div>
-          <div className="mt-4 overflow-x-auto">
-            <LoadingOrEmpty loading={loading} empty={data.length === 0} loadingText="Carregando registros..." emptyText="Nenhum registro cadastrado.">
-              <table className="min-w-full border-separate border-spacing-0 text-sm">
-                <thead>
-                  <tr>
-                    <th className="border-b border-zinc-200 px-3 py-3 text-left font-semibold text-black">Pedido</th>
-                    <th className="border-b border-zinc-200 px-3 py-3 text-left font-semibold text-black">Impressora</th>
-                    <th className="border-b border-zinc-200 px-3 py-3 text-left font-semibold text-black">Arquivo 3MF</th>
-                    <th className="border-b border-zinc-200 px-3 py-3 text-left font-semibold text-black">Tempo de impressão em minutos</th>
-                    <th className="border-b border-zinc-200 px-3 py-3 text-left font-semibold text-black">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.map((row, index) => (
-                    <tr key={String(index)}>
-                      <td className="border-b border-zinc-100 px-3 py-3 text-black">{row["id_pedido"] ?? ""}</td>
-                      <td className="border-b border-zinc-100 px-3 py-3 text-black">{row["id_impressora"] ?? ""}</td>
-                      <td className="border-b border-zinc-100 px-3 py-3 text-black">{row["id_3mf"] ?? ""}</td>
-                      <td className="border-b border-zinc-100 px-3 py-3 text-black">{row["tempo_impressao_min"] ?? ""}</td>
-                      <td className="border-b border-zinc-100 px-3 py-3 text-black">
-                        <ActionButtons onEdit={() => fillForEdit(row)} onDelete={() => handleDelete(String(row["id_pedido"] ?? ""))} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </LoadingOrEmpty>
-          </div>
-        </section>
-      </div>
+        <DragOverlay>{activePedido ? <CardPedido pedido={activePedido} flutuando /> : null}</DragOverlay>
+      </DndContext>
     </PageShell>
+  );
+}
+
+function Indicador({ titulo, valor, subtitulo }: { titulo: string; valor: string; subtitulo: string }) {
+  return (
+    <GlassCard>
+      <p className="text-sm font-semibold text-slate-300">{titulo}</p>
+      <p className="mt-2 text-3xl font-black text-white">{valor}</p>
+      <p className="mt-1 text-xs text-slate-400">{subtitulo}</p>
+    </GlassCard>
+  );
+}
+
+function ColunaProducao({
+  id,
+  titulo,
+  subtitulo,
+  detalhe,
+  pedidos,
+}: {
+  id: StatusProducao;
+  titulo: string;
+  subtitulo: string;
+  detalhe: string;
+  pedidos: PedidoCard[];
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={[
+        "min-h-[680px] rounded-3xl border border-white/10 border-t-4 bg-white/[0.04] p-4 transition-all backdrop-blur-xl",
+        detalhe,
+        isOver ? "scale-[1.01] bg-cyan-400/10 shadow-2xl shadow-cyan-500/20" : "",
+      ].join(" ")}
+    >
+      <div className="mb-4 flex items-start justify-between">
+        <div>
+          <h2 className="text-lg font-black text-white">{titulo}</h2>
+          <p className="mt-1 text-xs text-slate-400">{subtitulo}</p>
+        </div>
+        <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-slate-200">{pedidos.length}</span>
+      </div>
+
+      <SortableContext items={pedidos.map((pedido) => pedido.id)} strategy={verticalListSortingStrategy}>
+        <div className="space-y-4">
+          {pedidos.map((pedido) => (
+            <CardPedido key={pedido.id} pedido={pedido} />
+          ))}
+        </div>
+      </SortableContext>
+    </div>
+  );
+}
+
+function CardPedido({ pedido, flutuando = false }: { pedido: PedidoCard; flutuando?: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: pedido.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  const corPrioridade = {
+    Baixa: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+    Média: "bg-yellow-500/15 text-yellow-300 border-yellow-500/30",
+    Alta: "bg-orange-500/15 text-orange-300 border-orange-500/30",
+    Urgente: "bg-red-500/15 text-red-300 border-red-500/30",
+  }[pedido.prioridade];
+
+  return (
+    <article
+      ref={setNodeRef}
+      style={style}
+      className={[
+        "group rounded-3xl border border-white/10 bg-slate-900/90 p-4 shadow-xl backdrop-blur transition-all",
+        "hover:-translate-y-1 hover:border-cyan-400/50 hover:shadow-cyan-500/10",
+        isDragging ? "opacity-40" : "opacity-100",
+        flutuando ? "rotate-2 scale-105 shadow-2xl shadow-cyan-500/20" : "",
+      ].join(" ")}
+    >
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Package className="h-4 w-4 text-cyan-400" />
+            <h3 className="font-black text-cyan-300">{pedido.numeroPedido}</h3>
+            {pedido.status === "finalizado" && <CheckCircle2 className="h-4 w-4 text-emerald-400" />}
+          </div>
+          <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
+            <User className="h-3.5 w-3.5" />
+            <span>Cliente: {pedido.cliente}</span>
+          </div>
+        </div>
+
+        <button
+          className="cursor-grab rounded-xl bg-white/10 p-2 text-slate-300 active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        <span className={`rounded-full border px-3 py-1 text-xs font-bold ${corPrioridade}`}>{pedido.prioridade}</span>
+        {pedido.impressora && (
+          <span className="flex items-center gap-1 rounded-full border border-violet-500/30 bg-violet-500/15 px-3 py-1 text-xs font-bold text-violet-300">
+            <Printer className="h-3 w-3" />
+            {pedido.impressora}
+          </span>
+        )}
+      </div>
+
+      {typeof pedido.progresso === "number" && (
+        <div className="mb-4">
+          <div className="mb-1 flex justify-between text-xs text-slate-400">
+            <span>Progresso</span>
+            <span>{pedido.progresso}%</span>
+          </div>
+          <div className="h-2 rounded-full bg-white/10">
+            <div className="h-2 rounded-full bg-gradient-to-r from-cyan-400 to-violet-500" style={{ width: `${pedido.progresso}%` }} />
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2 rounded-2xl bg-black/20 p-3">
+        <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Itens ({pedido.itens.length})</p>
+        {pedido.itens.map((item) => (
+          <div key={item.id} className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-white/5 py-2 text-xs last:border-b-0">
+            <span className="font-semibold text-slate-100">• {item.descricao}</span>
+            <span className="text-slate-400">{item.material}</span>
+            <span className="text-slate-300">{item.quantidade} un</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="rounded-2xl bg-white/5 p-3">
+          <div className="flex items-center gap-2 text-xs text-slate-400"><Clock className="h-3.5 w-3.5" />Tempo</div>
+          <p className="mt-1 text-sm font-black text-white">{pedido.tempoEstimado}</p>
+        </div>
+        <div className="rounded-2xl bg-white/5 p-3">
+          <div className="flex items-center gap-2 text-xs text-slate-400"><Factory className="h-3.5 w-3.5" />Material</div>
+          <p className="mt-1 text-sm font-black text-white">{pedido.pesoEstimado}</p>
+        </div>
+      </div>
+    </article>
   );
 }

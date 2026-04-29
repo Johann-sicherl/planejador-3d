@@ -1,12 +1,21 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #000000;
+  --background: #020617;
+  --foreground: #f8fafc;
 }
 
-html, body {
-  background: var(--background);
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  background:
+    radial-gradient(circle at top left, rgba(14, 165, 233, 0.18), transparent 35%),
+    radial-gradient(circle at top right, rgba(168, 85, 247, 0.16), transparent 35%),
+    #020617;
   color: var(--foreground);
 }
 
@@ -14,15 +23,14 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-input, textarea, select, label, th, td, p, span, h1, h2, h3, h4, h5, h6, button, a {
-  color: #000000;
+input,
+textarea,
+select {
+  color: #f8fafc;
+  background: rgba(15, 23, 42, 0.9);
 }
 
-input::placeholder, textarea::placeholder {
-  color: #404040;
-  opacity: 1;
-}
-
-* {
-  box-sizing: border-box;
+input::placeholder,
+textarea::placeholder {
+  color: #94a3b8;
 }
