@@ -57,7 +57,7 @@ type OptionsPayload = {
   filamentos: OptionItem[];
   pedidos: OptionItem[];
   execucoes: OptionItem[];
-  planoProducao: OptionItem[];
+  planoProducao: OptionItem[]; estoque?: OptionItem[];
 };
 
 type Nomes = {
@@ -276,7 +276,7 @@ export default function PlanoProducaoPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [activePlano, setActivePlano] = useState<PlanoProducao | null>(null);
+  const [activePlano, setActivePlano] = useState<PlanoProducao | null>(null); const [alertaEstoque, setAlertaEstoque] = useState<{ tipo: "ok" | "erro" | "aviso"; texto: string } | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -289,19 +289,20 @@ export default function PlanoProducaoPage() {
       setLoading(true);
       setErro("");
 
-      const [planoResponse, optionsResponse] = await Promise.all([
+      const [planoResponse, optionsResponse, estoqueResponse] = await Promise.all([
         fetch("/api/plano-producao", { cache: "no-store" }),
         fetch("/api/options", { cache: "no-store" }),
+        fetch("/api/estoque", { cache: "no-store" }),
       ]);
-
       const planoResult = await planoResponse.json();
       const optionsResult = await optionsResponse.json();
+      const estoqueResult = await estoqueResponse.json();
 
       if (!planoResponse.ok || !planoResult.ok) throw new Error(apiError(planoResult));
       if (!optionsResponse.ok || !optionsResult.ok) throw new Error(apiError(optionsResult));
 
       setPlanos(planoResult.data || []);
-      setOptions(optionsResult.data?.[0] || null);
+      setOptions({ ...(optionsResult.data?.[0] || {}), estoque: estoqueResult?.ok ? estoqueResult.data || [] : [] });
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Erro ao carregar plano de produção.");
     } finally {
@@ -354,6 +355,135 @@ export default function PlanoProducaoPage() {
     return (options?.pedidos || []).find((pedido) => Number(pedido.id_pedido) === id);
   }
 
+  function avaliarEstoquePedido(idPedidoTexto: string, id3mfTexto?: string) {
+    if (!options || !idPedidoTexto) {
+      setAlertaEstoque(null);
+      return;
+    }
+
+    const pedido = (options.pedidos || []).find(
+      (item) => String(item.id_pedido) === String(idPedidoTexto)
+    );
+
+    const id3mf = Number(
+      id3mfTexto ||
+        pedido?.id_3mf ||
+        pedido?.id_arquivo_3mf ||
+        pedido?.id_arquivo ||
+        pedido?.arquivo_3mf_id ||
+        ""
+    );
+
+    const arquivo3mf = (options.arquivos3mf || []).find(
+      (item) => Number(item.id_3mf) === id3mf
+    );
+
+    if (!arquivo3mf) {
+      setAlertaEstoque({
+        tipo: "aviso",
+        texto: "Não foi possível validar o estoque: o pedido selecionado não possui Arquivo 3MF associado.",
+      });
+      return;
+    }
+
+    const idComponente = numberFromFields(arquivo3mf, [
+      "id_componente_stl",
+      "id_componente",
+      "id_componente_fk",
+      "componente_id",
+    ]);
+
+    const qtdComponente = numberFromFields(arquivo3mf, [
+      "qtd_componente",
+      "quantidade_componentes",
+      "quantidade_componente",
+      "qtde_componente",
+      "quantidade",
+      "qtd",
+      "qtde",
+    ]) || 1;
+
+    const componente = (options.componentes || []).find((item) => {
+      const ids = [
+        numberFromFields(item, ["id_componente_stl"]),
+        numberFromFields(item, ["id_componente"]),
+        numberFromFields(item, ["id"]),
+      ].filter((value) => value !== null);
+
+      return idComponente !== null && ids.includes(idComponente);
+    });
+
+    if (!componente) {
+      setAlertaEstoque({
+        tipo: "aviso",
+        texto: "Não foi possível validar o estoque: o componente do Arquivo 3MF não foi encontrado.",
+      });
+      return;
+    }
+
+    const estoquePorFilamento = new Map<number, number>();
+    for (const item of options.estoque || []) {
+      const idFilamento = numberFromFields(item, ["id_filamento"]);
+      const qtdEstoque = numberFromFields(item, ["qtd_estoque_gramas", "quantidade", "qtd", "gramas"]);
+      if (idFilamento !== null && qtdEstoque !== null) {
+        estoquePorFilamento.set(idFilamento, (estoquePorFilamento.get(idFilamento) || 0) + qtdEstoque);
+      }
+    }
+
+    const necessidades: { idFilamento: number; necessario: number; disponivel: number; label: string }[] = [];
+
+    for (let i = 1; i <= 8; i++) {
+      const idFilamento = numberFromFields(componente, [
+        `id_filamento${i}`,
+        `id_filamento_${i}`,
+      ]);
+      const gramasPorComponente = numberFromFields(componente, [
+        `gramas_filamento_${i}`,
+        `gramas_filamento${i}`,
+      ]);
+
+      if (idFilamento === null || gramasPorComponente === null || gramasPorComponente <= 0) continue;
+
+      const necessario = Number((gramasPorComponente * qtdComponente).toFixed(3));
+      const disponivel = Number((estoquePorFilamento.get(idFilamento) || 0).toFixed(3));
+      const filamento = (options.filamentos || []).find((item) => Number(item.id_filamento) === idFilamento);
+      const label = labelFrom(
+        filamento,
+        ["label_filamento", "nome_filamento", "nome", "descricao", "material_filamento", "material"],
+        `Filamento ${idFilamento}`
+      );
+
+      necessidades.push({ idFilamento, necessario, disponivel, label });
+    }
+
+    if (necessidades.length === 0) {
+      setAlertaEstoque({
+        tipo: "aviso",
+        texto: "Não há consumo de filamento cadastrado para o componente deste pedido.",
+      });
+      return;
+    }
+
+    const faltantes = necessidades.filter((item) => item.disponivel < item.necessario);
+    const resumo = necessidades
+      .map((item) => `${item.label}: necessário ${item.necessario} g / estoque ${item.disponivel} g`)
+      .join(" | ");
+
+    if (faltantes.length > 0) {
+      setAlertaEstoque({
+        tipo: "erro",
+        texto: `Estoque insuficiente para imprimir este pedido. ${resumo}`,
+      });
+      return;
+    }
+
+    setAlertaEstoque({
+      tipo: "ok",
+      texto: `Estoque suficiente para imprimir este pedido. ${resumo}`,
+    });
+  }
+
+
   function sugerirImpressora() {
     const impressoras = options?.impressoras || [];
     if (impressoras.length === 0) {
@@ -386,7 +516,7 @@ export default function PlanoProducaoPage() {
     setForm(EMPTY_FORM);
     setFormOpen(true);
     setMensagem("");
-    setErro("");
+    setErro(""); setAlertaEstoque(null);
   }
 
   function editarPlano(plano: PlanoProducao) {
@@ -427,7 +557,6 @@ export default function PlanoProducaoPage() {
         ordem_fila: toNumberOrNull(form.ordem_fila),
         prioridade: form.prioridade,
         progresso: toNumberOrNull(form.progresso),
-        peso_estimado_g: toNumberOrNull(form.peso_estimado_g),
       };
 
       const response = await fetch("/api/plano-producao", {
@@ -678,15 +807,7 @@ export default function PlanoProducaoPage() {
               />
             </Field>
 
-            <Field label="Peso estimado (g)">
-              <input
-                value={form.peso_estimado_g}
-                onChange={(e) => setForm((f) => ({ ...f, peso_estimado_g: e.target.value }))}
-                type="number"
-                min="0"
-                className="field"
-              />
-            </Field>
+            
 
             <Field label="Ordem da fila">
               <input
