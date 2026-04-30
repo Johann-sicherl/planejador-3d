@@ -550,8 +550,8 @@ export default function PlanoProducaoPage() {
                           setForm((f) => ({
                             ...f,
                             id_pedido: e.target.value,
-                            id_3mf: id3mf,
-                            peso_estimado_g: pesoEstimado || f.peso_estimado_g,
+                            id_3mf: id3mf || f.id_3mf,
+                            peso_estimado_g: pesoEstimado !== "" ? pesoEstimado : f.peso_estimado_g,
                           }));
                 }}
                 disabled={Boolean(editingId)}
