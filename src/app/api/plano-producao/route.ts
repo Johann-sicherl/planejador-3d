@@ -31,10 +31,7 @@ function sanitize(body: Record<string, unknown>) {
 
   for (const field of FIELDS) {
     const value = body[field];
-
-    if (value === "" || value === undefined) {
-      continue;
-    }
+    if (value === "" || value === undefined) continue;
 
     if (value === null) {
       payload[field] = null;
@@ -56,10 +53,7 @@ export async function GET() {
     .order("ordem_fila", { ascending: true, nullsFirst: false })
     .order(ID_COL, { ascending: true });
 
-  if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-  }
-
+  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true, data });
 }
 
@@ -70,7 +64,7 @@ export async function POST(request: NextRequest) {
 
     if (!payload.id_pedido) {
       return NextResponse.json(
-        { ok: false, error: "Informe o pedido para adicionar ao plano de produção." },
+        { ok: false, error: "Informe o pedido para adicionar ao plano de producao." },
         { status: 400 }
       );
     }
@@ -79,15 +73,12 @@ export async function POST(request: NextRequest) {
     if (payload.progresso === undefined) payload.progresso = 0;
 
     const { data, error } = await supabase.from(TABLE).insert([payload]).select();
-
-    if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-    }
+    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
 
     return NextResponse.json({ ok: true, data }, { status: 201 });
   } catch {
     return NextResponse.json(
-      { ok: false, error: "Falha ao processar a requisição." },
+      { ok: false, error: "Falha ao processar a requisicao." },
       { status: 500 }
     );
   }
@@ -99,7 +90,7 @@ export async function PUT(request: NextRequest) {
     const id = body[ID_COL];
 
     if (id === undefined || id === null || id === "") {
-      return NextResponse.json({ ok: false, error: "ID não informado." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "ID nao informado." }, { status: 400 });
     }
 
     const payload = sanitize(body);
@@ -111,10 +102,7 @@ export async function PUT(request: NextRequest) {
       .eq(ID_COL, id)
       .select();
 
-    if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-    }
-
+    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true, data });
   } catch {
     return NextResponse.json({ ok: false, error: "Falha ao atualizar." }, { status: 500 });
@@ -126,15 +114,10 @@ export async function DELETE(request: NextRequest) {
     const url = new URL(request.url);
     const id = url.searchParams.get("id");
 
-    if (!id) {
-      return NextResponse.json({ ok: false, error: "ID não informado." }, { status: 400 });
-    }
+    if (!id) return NextResponse.json({ ok: false, error: "ID nao informado." }, { status: 400 });
 
     const { error } = await supabase.from(TABLE).delete().eq(ID_COL, id);
-
-    if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-    }
+    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
 
     return NextResponse.json({ ok: true });
   } catch {

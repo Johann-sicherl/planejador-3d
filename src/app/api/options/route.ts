@@ -3,20 +3,23 @@ import { supabase } from "../../../lib/supabase";
 
 type Row = Record<string, unknown>;
 
-function safeData<T extends Row>(result: { data: T[] | null }) {
+type SupabaseListResult<T> = {
+  data: T[] | null;
+  error: { message?: string } | null;
+};
+
+function safeData<T>(result: SupabaseListResult<T>) {
   return result.data || [];
 }
 
 function firstText(row: Row | undefined, fields: string[], fallback: string) {
   if (!row) return fallback;
-
   for (const field of fields) {
     const value = row[field];
     if (value !== null && value !== undefined && String(value).trim() !== "") {
       return String(value).trim();
     }
   }
-
   return fallback;
 }
 
@@ -64,15 +67,15 @@ export async function GET() {
 
     if (errors.length > 0) {
       return NextResponse.json(
-        { ok: false, error: errors[0]?.message || "Falha ao carregar opções." },
+        { ok: false, error: errors[0]?.message || "Falha ao carregar opcoes." },
         { status: 500 }
       );
     }
 
-    const clientesData = safeData(clientes);
-    const impressorasData = safeData(impressoras);
-    const arquivos3mfData = safeData(arquivos3mf);
-    const pedidosData = safeData(pedidos);
+    const clientesData = safeData<Row>(clientes as SupabaseListResult<Row>);
+    const impressorasData = safeData<Row>(impressoras as SupabaseListResult<Row>);
+    const arquivos3mfData = safeData<Row>(arquivos3mf as SupabaseListResult<Row>);
+    const pedidosData = safeData<Row>(pedidos as SupabaseListResult<Row>);
 
     const clienteById = new Map(
       clientesData.map((row) => [
@@ -101,18 +104,13 @@ export async function GET() {
       const arquivo = arquivoById.get(Number(pedido.id_3mf));
       const numero = firstText(pedido, ["numero_pedido", "codigo_pedido", "nome_pedido", "pedido"], "");
       const entrega = formatDate(pedido.data_entrega_prevista);
-
       const partes = [
         numero || cliente || arquivo || "Pedido cadastrado",
         arquivo,
         impressora,
         entrega ? `Entrega ${entrega}` : "",
       ].filter(Boolean);
-
-      return {
-        ...pedido,
-        label_pedido: partes.join(" • "),
-      };
+      return { ...pedido, label_pedido: partes.join(" - ") };
     });
 
     return NextResponse.json({
@@ -121,18 +119,18 @@ export async function GET() {
         {
           clientes: clientesData,
           impressoras: impressorasData,
-          componentes: safeData(componentes),
+          componentes: safeData<Row>(componentes as SupabaseListResult<Row>),
           arquivos3mf: arquivos3mfData,
-          filamentos: safeData(filamentos),
+          filamentos: safeData<Row>(filamentos as SupabaseListResult<Row>),
           pedidos: pedidosComLabel,
-          execucoes: safeData(execucoes),
-          planoProducao: safeData(planoProducao),
+          execucoes: safeData<Row>(execucoes as SupabaseListResult<Row>),
+          planoProducao: safeData<Row>(planoProducao as SupabaseListResult<Row>),
         },
       ],
     });
   } catch {
     return NextResponse.json(
-      { ok: false, error: "Falha ao carregar opções." },
+      { ok: false, error: "Falha ao carregar opcoes." },
       { status: 500 }
     );
   }
