@@ -171,10 +171,85 @@ function numberFromFields(row: OptionItem | undefined, fields: string[]) {
   return null;
 }
 
+function calcularPesoEstimadoPor3mf(optionsData: OptionsPayload | null, id3mfTexto: string) {
+  if (!optionsData || !id3mfTexto) return "";
+
+  const id3mf = Number(id3mfTexto);
+  if (Number.isNaN(id3mf)) return "";
+
+  const arquivo3mf = (optionsData.arquivos3mf || []).find((item) => {
+    const possiveisIds = [
+      numberFromFields(item, ["id_3mf"]),
+      numberFromFields(item, ["id"]),
+      numberFromFields(item, ["id_arquivo_3mf"]),
+      numberFromFields(item, ["arquivo_3mf_id"]),
+    ].filter((value): value is number => value !== null);
+
+    return possiveisIds.includes(id3mf);
+  });
+
+  const idComponente = numberFromFields(arquivo3mf, [
+    "id_componente_stl",
+    "id_componente",
+    "id_componente_fk",
+    "componente_id",
+    "id_stl",
+    "stl_id",
+  ]);
+
+  if (idComponente === null) return "";
+
+  const componente = (optionsData.componentes || []).find((item) => {
+    const possiveisIds = [
+      numberFromFields(item, ["id_componente_stl"]),
+      numberFromFields(item, ["id_componente"]),
+      numberFromFields(item, ["id"]),
+      numberFromFields(item, ["componente_id"]),
+    ].filter((value): value is number => value !== null);
+
+    return possiveisIds.includes(idComponente);
+  });
+
+  const pesoComponente = numberFromFields(componente, [
+    "peso_g",
+    "peso_estimado_g",
+    "peso_componente_g",
+    "peso_gramas",
+    "peso_unitario_g",
+    "peso_unit_g",
+    "peso_liquido_g",
+    "peso_stl_g",
+    "massa_g",
+    "gramas",
+    "peso_componente",
+    "peso",
+  ]);
+
+  const quantidadeNo3mf = numberFromFields(arquivo3mf, [
+    "qtd_componente",
+    "quantidade_componentes",
+    "quantidade_componente",
+    "qtde_componente",
+    "qtd_stl",
+    "quantidade_stl",
+    "qtd_pecas",
+    "quantidade_pecas",
+    "quantidade",
+    "qtd",
+    "qtde",
+  ]);
+
+  if (pesoComponente === null || quantidadeNo3mf === null) return "";
+
+  return String(Number((pesoComponente * quantidadeNo3mf).toFixed(3)));
+}
+
 function calcularPesoEstimadoPedido(optionsData: OptionsPayload | null, idPedidoTexto: string) {
   if (!optionsData || !idPedidoTexto) return "";
 
   const idPedido = Number(idPedidoTexto);
+  if (Number.isNaN(idPedido)) return "";
+
   const pedido = (optionsData.pedidos || []).find(
     (item) => Number(item.id_pedido) === idPedido
   );
@@ -186,50 +261,9 @@ function calcularPesoEstimadoPedido(optionsData: OptionsPayload | null, idPedido
     "arquivo_3mf_id",
   ]);
 
-  const arquivo3mf = (optionsData.arquivos3mf || []).find(
-    (item) => Number(item.id_3mf) === id3mf
-  );
+  if (id3mf === null) return "";
 
-  const idComponente = numberFromFields(arquivo3mf, [
-    "id_componente_stl",
-    "id_componente",
-    "id_componente_fk",
-    "componente_id",
-  ]);
-
-  const componente = (optionsData.componentes || []).find((item) => {
-    const possiveisIds = [
-      numberFromFields(item, ["id_componente_stl"]),
-      numberFromFields(item, ["id_componente"]),
-      numberFromFields(item, ["id"]),
-    ].filter((value) => value !== null);
-
-    return idComponente !== null && possiveisIds.includes(idComponente);
-  });
-
-  const pesoComponente = numberFromFields(componente, [
-    "peso_g",
-    "peso_estimado_g",
-    "peso_componente_g",
-    "peso_gramas",
-    "massa_g",
-    "gramas",
-    "peso",
-  ]);
-
-  const quantidadeNo3mf = numberFromFields(arquivo3mf, [
-    "qtd_componente",
-    "quantidade_componentes",
-    "quantidade_componente",
-    "qtde_componente",
-    "quantidade",
-    "qtd",
-    "qtde",
-  ]);
-
-  if (pesoComponente === null || quantidadeNo3mf === null) return "";
-
-  return String(Number((pesoComponente * quantidadeNo3mf).toFixed(3)));
+  return calcularPesoEstimadoPor3mf(optionsData, String(id3mf));
 }
 
 export default function PlanoProducaoPage() {
@@ -546,12 +580,12 @@ export default function PlanoProducaoPage() {
                 onChange={(e) => {
                   const pedido = (options?.pedidos || []).find((p) => String(p.id_pedido) === e.target.value);
                           const id3mf = pedido?.id_3mf ? String(pedido.id_3mf) : "";
-                          const pesoEstimado = calcularPesoEstimadoPedido(options, e.target.value);
+                          const pesoEstimado = id3mf ? calcularPesoEstimadoPor3mf(options, id3mf) : calcularPesoEstimadoPedido(options, e.target.value);
                           setForm((f) => ({
                             ...f,
                             id_pedido: e.target.value,
                             id_3mf: id3mf || f.id_3mf,
-                            peso_estimado_g: pesoEstimado !== "" ? pesoEstimado : f.peso_estimado_g,
+                            peso_estimado_g: pesoEstimado,
                           }));
                 }}
                 disabled={Boolean(editingId)}
