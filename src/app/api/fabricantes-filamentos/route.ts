@@ -1,49 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "../../../lib/supabase";
 
-const TABLE = "cadastro_filamentos";
-const ID_COL = "id_filamento";
-const FIELDS = [
-  "nome_filamento",
-  "material_filamento",
-  "id_fabricante_filamento",
-  "cor_filamento",
-  "custo_medio_brl",
-];
-const NUMERIC = ["custo_medio_brl", "id_fabricante_filamento"];
+const TABLE = "cadastro_fabricantes_filamentos";
+const ID_COL = "id_fabricante_filamento";
 
 function sanitize(body: Record<string, unknown>) {
-  const payload: Record<string, string | number | null> = {};
-
-  for (const field of FIELDS) {
-    const value = body[field];
-
-    if (value === "" || value === undefined || value === null) {
-      payload[field] = null;
-    } else if (NUMERIC.includes(field)) {
-      const parsed = Number(value);
-      payload[field] = Number.isNaN(parsed) ? null : parsed;
-    } else {
-      payload[field] = String(value).trim() || null;
-    }
-  }
-
-  return payload;
+  return {
+    nome_fabricante: String(body.nome_fabricante ?? "").trim() || null,
+    site_fabricante: String(body.site_fabricante ?? "").trim() || null,
+    observacoes: String(body.observacoes ?? "").trim() || null,
+    ativo: body.ativo === false ? false : true,
+  };
 }
 
 export async function GET() {
   const { data, error } = await supabase
     .from(TABLE)
-    .select(
-      `
-      *,
-      fabricante:cadastro_fabricantes_filamentos (
-        id_fabricante_filamento,
-        nome_fabricante
-      )
-    `
-    )
-    .order(ID_COL, { ascending: true });
+    .select("*")
+    .order("nome_fabricante", { ascending: true });
 
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
@@ -55,16 +29,15 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const requiredValue = String(body.nome_filamento ?? "").trim();
+    const payload = sanitize(body);
 
-    if (!requiredValue) {
+    if (!payload.nome_fabricante) {
       return NextResponse.json(
-        { ok: false, error: "O campo nome_filamento é obrigatório." },
+        { ok: false, error: "O campo nome_fabricante é obrigatório." },
         { status: 400 }
       );
     }
 
-    const payload = sanitize(body);
     const { data, error } = await supabase.from(TABLE).insert([payload]).select();
 
     if (error) {
@@ -90,6 +63,14 @@ export async function PUT(request: NextRequest) {
     }
 
     const payload = sanitize(body);
+
+    if (!payload.nome_fabricante) {
+      return NextResponse.json(
+        { ok: false, error: "O campo nome_fabricante é obrigatório." },
+        { status: 400 }
+      );
+    }
+
     const { data, error } = await supabase
       .from(TABLE)
       .update(payload)
