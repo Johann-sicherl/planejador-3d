@@ -545,12 +545,12 @@ export default function PlanoProducaoPage() {
                 value={form.id_pedido}
                 onChange={(e) => {
                   const pedido = (options?.pedidos || []).find((p) => String(p.id_pedido) === e.target.value);
-                          const id3mfPedido = pedido?.id_3mf ? String(pedido.id_3mf) : f.id_3mf;
+                          const id3mf = pedido?.id_3mf ? String(pedido.id_3mf) : "";
                           const pesoEstimado = calcularPesoEstimadoPedido(options, e.target.value);
                           setForm((f) => ({
                             ...f,
                             id_pedido: e.target.value,
-                            id_3mf: id3mfPedido,
+                            id_3mf: id3mf,
                             peso_estimado_g: pesoEstimado || f.peso_estimado_g,
                           }));
                 }}
