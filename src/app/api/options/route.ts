@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "../../../lib/supabase";
 
-type Row = Record<string, unknown>;
+type Row = Record<string, any>;
 
 function safeData<T>(result: { data: T[] | null }) {
   return result.data || [];
@@ -32,6 +32,17 @@ function formatDate(value: unknown) {
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
+function montarLabelFilamento(row: Row) {
+  const partes = [
+    firstText(row, ["nome_filamento", "nome", "descricao"], ""),
+    firstText(row, ["material_filamento", "material"], ""),
+    firstText(row, ["nome_fabricante", "fabricante_filamento", "fabricante"], ""),
+    firstText(row, ["cor_filamento", "cor"], ""),
+  ].filter(Boolean);
+
+  return partes.join(" • ");
+}
+
 export async function GET() {
   try {
     const [
@@ -40,6 +51,7 @@ export async function GET() {
       componentes,
       arquivos3mf,
       filamentos,
+      fabricantesFilamentos,
       pedidos,
       execucoes,
       planoProducao,
@@ -49,6 +61,7 @@ export async function GET() {
       supabase.from("cadastro_componentes").select("*").order("id_componente_stl", { ascending: true }),
       supabase.from("cadastro_3mf").select("*").order("id_3mf", { ascending: true }),
       supabase.from("cadastro_filamentos").select("*").order("id_filamento", { ascending: true }),
+      supabase.from("cadastro_fabricantes_filamentos").select("*").order("nome_fabricante", { ascending: true }),
       supabase.from("cadastro_pedidos").select("*").order("id_pedido", { ascending: true }),
       supabase.from("execucao_fabric").select("*").order("id_fila", { ascending: true }),
       supabase.from("plano_producao").select("*").order("id_pedido", { ascending: true }),
@@ -72,15 +85,50 @@ export async function GET() {
       );
     }
 
-    const clientesData = safeData<Row>(clientes);
-    const impressorasData = safeData<Row>(impressoras);
-    const arquivos3mfData = safeData<Row>(arquivos3mf);
-    const pedidosData = safeData<Row>(pedidos);
+    const clientesData = safeData(clientes);
+    const impressorasData = safeData(impressoras);
+    const arquivos3mfData = safeData(arquivos3mf);
+    const pedidosData = safeData(pedidos);
+    const filamentosData = safeData(filamentos);
+    const fabricantesFilamentosData = fabricantesFilamentos.error ? [] : safeData(fabricantesFilamentos);
+
+    const fabricanteById = new Map(
+      fabricantesFilamentosData.map((row) => [
+        Number(row.id_fabricante_filamento ?? row.id_fabricante ?? row.id),
+        firstText(row, ["nome_fabricante", "fabricante", "nome"], ""),
+      ])
+    );
+
+    const filamentosComLabel = filamentosData.map((filamento) => {
+      const fabricanteId = Number(
+        filamento.id_fabricante_filamento ??
+          filamento.id_fabricante ??
+          filamento.fabricante_id
+      );
+
+      const nomeFabricante = fabricanteById.get(fabricanteId) || "";
+      const row = {
+        ...filamento,
+        nome_fabricante: nomeFabricante,
+      };
+
+      return {
+        ...row,
+        label_filamento: montarLabelFilamento(row),
+      };
+    });
 
     const clienteById = new Map(
       clientesData.map((row) => [
         Number(row.id_cliente),
         firstText(row, ["nome_cliente", "cliente", "razao_social", "nome"], "Cliente sem nome"),
+      ])
+    );
+
+    const impressoraById = new Map(
+      impressorasData.map((row) => [
+        Number(row.id_impressora),
+        firstText(row, ["nome_impressora", "nome", "modelo", "descricao"], "Impressora sem nome"),
       ])
     );
 
@@ -93,16 +141,15 @@ export async function GET() {
 
     const pedidosComLabel = pedidosData.map((pedido) => {
       const cliente = clienteById.get(Number(pedido.id_cliente));
+      const impressora = impressoraById.get(Number(pedido.id_impressora));
       const arquivo = arquivoById.get(Number(pedido.id_3mf));
       const numero = firstText(pedido, ["numero_pedido", "codigo_pedido", "nome_pedido", "pedido"], "");
       const entrega = formatDate(pedido.data_entrega_prevista);
 
-      // Correção cirúrgica: a label do pedido não contém impressora.
-      // A impressora pertence somente ao Plano de Produção.
       const partes = [
         numero || cliente || arquivo || "Pedido cadastrado",
-        cliente,
         arquivo,
+        impressora,
         entrega ? `Entrega ${entrega}` : "",
       ].filter(Boolean);
 
@@ -120,7 +167,8 @@ export async function GET() {
           impressoras: impressorasData,
           componentes: safeData(componentes),
           arquivos3mf: arquivos3mfData,
-          filamentos: safeData(filamentos),
+          filamentos: filamentosComLabel,
+          fabricantesFilamentos: fabricantesFilamentosData,
           pedidos: pedidosComLabel,
           execucoes: safeData(execucoes),
           planoProducao: safeData(planoProducao),
