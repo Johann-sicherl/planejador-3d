@@ -29,14 +29,14 @@ export type ApiResult<T> = {
 const menu = [
   { href: "/dashboard", label: "Dashboard", icon: Gauge },
   { href: "/clientes", label: "Clientes", icon: Users },
+  { href: "/fabricantes-filamentos", label: "Fabricantes de Filamentos", icon: Factory },
+  { href: "/filamentos", label: "Filamentos", icon: Layers3 },
+  { href: "/componentes", label: "Componentes", icon: Package },
+  { href: "/arquivos-3mf", label: "Arquivos 3MF", icon: FileText },
   { href: "/pedidos", label: "Pedidos", icon: ClipboardList },
   { href: "/plano-producao", label: "Plano de Produ\u00e7\u00e3o", icon: Factory },
   { href: "/execucoes", label: "Execu\u00e7\u00e3o", icon: Printer },
   { href: "/estoque", label: "Estoque", icon: Boxes },
-  { href: "/componentes", label: "Componentes", icon: Package },
-  { href: "/filamentos", label: "Filamentos", icon: Layers3 },
-  { href: "/fabricantes-filamentos", label: "Fabricantes de Filamentos", icon: Factory },
-  { href: "/arquivos-3mf", label: "Arquivos 3MF", icon: FileText },
   { href: "/cotacoes", label: "Cota\u00e7\u00f5es", icon: BarChart3 },
   { href: "/falhas", label: "Falhas", icon: TriangleAlert },
 ];
