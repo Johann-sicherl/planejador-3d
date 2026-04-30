@@ -157,6 +157,81 @@ function apiError(result: unknown) {
   return "Erro desconhecido.";
 }
 
+function numberFromFields(row: OptionItem | undefined, fields: string[]) {
+  if (!row) return null;
+
+  for (const field of fields) {
+    const value = row[field];
+    if (value !== null && value !== undefined && String(value).trim() !== "") {
+      const parsed = Number(value);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+  }
+
+  return null;
+}
+
+function calcularPesoEstimadoPedido(optionsData: OptionsPayload | null, idPedidoTexto: string) {
+  if (!optionsData || !idPedidoTexto) return "";
+
+  const idPedido = Number(idPedidoTexto);
+  const pedido = (optionsData.pedidos || []).find(
+    (item) => Number(item.id_pedido) === idPedido
+  );
+
+  const id3mf = numberFromFields(pedido, [
+    "id_3mf",
+    "id_arquivo_3mf",
+    "id_arquivo",
+    "arquivo_3mf_id",
+  ]);
+
+  const arquivo3mf = (optionsData.arquivos3mf || []).find(
+    (item) => Number(item.id_3mf) === id3mf
+  );
+
+  const idComponente = numberFromFields(arquivo3mf, [
+    "id_componente_stl",
+    "id_componente",
+    "id_componente_fk",
+    "componente_id",
+  ]);
+
+  const componente = (optionsData.componentes || []).find((item) => {
+    const possiveisIds = [
+      numberFromFields(item, ["id_componente_stl"]),
+      numberFromFields(item, ["id_componente"]),
+      numberFromFields(item, ["id"]),
+    ].filter((value) => value !== null);
+
+    return idComponente !== null && possiveisIds.includes(idComponente);
+  });
+
+  const pesoComponente = numberFromFields(componente, [
+    "peso_g",
+    "peso_estimado_g",
+    "peso_componente_g",
+    "peso_gramas",
+    "massa_g",
+    "gramas",
+    "peso",
+  ]);
+
+  const quantidadeNo3mf = numberFromFields(arquivo3mf, [
+    "qtd_componente",
+    "quantidade_componentes",
+    "quantidade_componente",
+    "qtde_componente",
+    "quantidade",
+    "qtd",
+    "qtde",
+  ]);
+
+  if (pesoComponente === null || quantidadeNo3mf === null) return "";
+
+  return String(Number((pesoComponente * quantidadeNo3mf).toFixed(3)));
+}
+
 export default function PlanoProducaoPage() {
   const [planos, setPlanos] = useState<PlanoProducao[]>([]);
   const [options, setOptions] = useState<OptionsPayload | null>(null);
@@ -470,11 +545,14 @@ export default function PlanoProducaoPage() {
                 value={form.id_pedido}
                 onChange={(e) => {
                   const pedido = (options?.pedidos || []).find((p) => String(p.id_pedido) === e.target.value);
-                  setForm((f) => ({
-                    ...f,
-                    id_pedido: e.target.value,
-                    id_3mf: pedido?.id_3mf ? String(pedido.id_3mf) : f.id_3mf,
-                  }));
+                          const id3mfPedido = pedido?.id_3mf ? String(pedido.id_3mf) : f.id_3mf;
+                          const pesoEstimado = calcularPesoEstimadoPedido(options, e.target.value);
+                          setForm((f) => ({
+                            ...f,
+                            id_pedido: e.target.value,
+                            id_3mf: id3mfPedido,
+                            peso_estimado_g: pesoEstimado || f.peso_estimado_g,
+                          }));
                 }}
                 disabled={Boolean(editingId)}
                 required
