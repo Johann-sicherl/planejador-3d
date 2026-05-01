@@ -53,7 +53,7 @@ type FalhaEmAndamento = {
 
 const EMPTY_FORM: FormState = {
   id_pedido: "", id_impressora: "", id_3mf: "", tempo_impressao_min: "",
-  status_producao: "pedidos", ordem_fila: "", prioridade: "Media",
+  status_producao: "pedidos", ordem_fila: "", prioridade: "Média",
   progresso: "0", peso_estimado_g: "",
 };
 
@@ -214,7 +214,7 @@ export default function PlanoProducaoPage() {
       id_pedido:String(plano.id_pedido??""), id_impressora:String(plano.id_impressora??""),
       id_3mf:String(plano.id_3mf??""), tempo_impressao_min:String(plano.tempo_impressao_min??""),
       status_producao:plano.status_producao||"pedidos", ordem_fila:String(plano.ordem_fila??""),
-      prioridade:plano.prioridade||"Media", progresso:String(plano.progresso??0),
+      prioridade:plano.prioridade||"Média", progresso:String(plano.progresso??0),
       peso_estimado_g:String(plano.peso_estimado_g??""),
     });
     setFormOpen(true); setMensagem(""); setErro("");
@@ -390,7 +390,7 @@ export default function PlanoProducaoPage() {
             <Field label="Prioridade">
               <select value={form.prioridade} onChange={(e)=>setForm((f)=>({...f,prioridade:e.target.value as Prioridade}))} className="field">
                 <option value="Baixa">Baixa</option>
-                <option value="Media">Media</option>
+                <option value="Média">Média</option>
                 <option value="Alta">Alta</option>
                 <option value="Urgente">Urgente</option>
               </select>
@@ -519,7 +519,7 @@ function CardPlano({plano,nomes,flutuando=false,falhaEmAndamento,onFalhaChange,o
 }) {
   const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useSortable({id:String(plano.id_pedido)});
   const style={transform:CSS.Transform.toString(transform),transition};
-  const prioridade=plano.prioridade||"Media";
+  const prioridade=plano.prioridade||"Média";
   const progresso=plano.progresso??0;
   const isFalha=plano.status_producao==="falha";
   const aguardaForm=!!falhaEmAndamento;
@@ -557,7 +557,7 @@ function CardPlano({plano,nomes,flutuando=false,falhaEmAndamento,onFalhaChange,o
         </div>
 
         <div className="mb-3 flex flex-wrap gap-2">
-          <span className={`rounded-full border px-3 py-1 text-xs font-bold ${corPrioridade[prioridade]||corPrioridade["Media"]}`}>{prioridade}</span>
+          <span className={`rounded-full border px-3 py-1 text-xs font-bold ${corPrioridade[prioridade]||corPrioridade["Média"]}`}>{prioridade}</span>
           {plano.status_producao==="finalizado"&&(
             <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-300">
               <CheckCircle2 className="h-3 w-3"/> Concluido
