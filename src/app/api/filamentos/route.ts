@@ -42,7 +42,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const requiredValue = String(body.nome_filamento ?? "").trim();
+    const requiredValue = String(body.nome_filamento ?? " - " ?? body.material_filamento ?? " - " ?? body.cor_filamento).trim();
     if (!requiredValue) {
       return NextResponse.json({ ok: false, error: "O campo nome_filamento e obrigatorio." }, { status: 400 });
     }

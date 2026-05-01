@@ -12,7 +12,7 @@ import {
   useCrudList,
 } from "../_shared";
 
-type Filamento = { id_filamento: number; nome_filamento: string };
+type Filamento = { id_filamento: number; nome_filamento: string; material_filamento: string | null; cor_filamento: string | null};
 type Carretel = { id_carretel: number; marca_carretel: string; peso_carretel_g: number };
 
 type RegistroEstoque = {
@@ -132,6 +132,17 @@ export default function Page() {
     setMarcaCarretel(String(row.marca_carretel ?? ""));
     setPesoCarretelG(String(row.peso_carretel_g ?? ""));
   }
+  function filamentoLabel(f?: Filamento | null) {
+  if (!f) return "-";
+
+  return [
+    f.nome_filamento,
+    f.material_filamento,
+    f.cor_filamento,
+  ]
+    .filter(Boolean)
+    .join(" - ");
+}
   async function handleCarretelDelete(id: string) {
     if (!confirm("Excluir este peso de carretel?")) return;
     try {
@@ -195,7 +206,9 @@ export default function Page() {
             <select value={idFilamento} onChange={(e) => setIdFilamento(e.target.value)} className={FIELD_CLASS} required>
               <option value="">Selecione</option>
               {filamentos.map((f) => (
-                <option key={f.id_filamento} value={f.id_filamento}>{f.nome_filamento}</option>
+                <option key={f.id_filamento} value={f.id_filamento}>
+                  {`${f.nome_filamento} - ${f.material_filamento} - ${f.cor_filamento}`}
+                </option>
               ))}
             </select>
           </div>
