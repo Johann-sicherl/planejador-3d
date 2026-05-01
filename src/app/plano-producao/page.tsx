@@ -46,7 +46,6 @@ type PlanoProducao = {
   ordem_fila?: number | null;
   prioridade?: Prioridade | null;
   progresso?: number | null;
-  peso_estimado_g?: number | null;
 };
 
 type OptionsPayload = {
@@ -76,7 +75,6 @@ type FormState = {
   ordem_fila: string;
   prioridade: Prioridade;
   progresso: string;
-  peso_estimado_g: string;
 };
 
 const EMPTY_FORM: FormState = {
@@ -88,7 +86,6 @@ const EMPTY_FORM: FormState = {
   ordem_fila: "",
   prioridade: "Média",
   progresso: "0",
-  peso_estimado_g: "",
 };
 
 const colunas: { id: StatusProducao; titulo: string; subtitulo: string; detalhe: string }[] = [
@@ -171,101 +168,6 @@ function numberFromFields(row: OptionItem | undefined, fields: string[]) {
   return null;
 }
 
-function calcularPesoEstimadoPor3mf(optionsData: OptionsPayload | null, id3mfTexto: string) {
-  if (!optionsData || !id3mfTexto) return "";
-
-  const id3mf = Number(id3mfTexto);
-  if (Number.isNaN(id3mf)) return "";
-
-  const arquivo3mf = (optionsData.arquivos3mf || []).find((item) => {
-    const possiveisIds = [
-      numberFromFields(item, ["id_3mf"]),
-      numberFromFields(item, ["id"]),
-      numberFromFields(item, ["id_arquivo_3mf"]),
-      numberFromFields(item, ["arquivo_3mf_id"]),
-    ].filter((value): value is number => value !== null);
-
-    return possiveisIds.includes(id3mf);
-  });
-
-  const idComponente = numberFromFields(arquivo3mf, [
-    "id_componente_stl",
-    "id_componente",
-    "id_componente_fk",
-    "componente_id",
-    "id_stl",
-    "stl_id",
-  ]);
-
-  if (idComponente === null) return "";
-
-  const componente = (optionsData.componentes || []).find((item) => {
-    const possiveisIds = [
-      numberFromFields(item, ["id_componente_stl"]),
-      numberFromFields(item, ["id_componente"]),
-      numberFromFields(item, ["id"]),
-      numberFromFields(item, ["componente_id"]),
-    ].filter((value): value is number => value !== null);
-
-    return possiveisIds.includes(idComponente);
-  });
-
-  const pesoComponente = numberFromFields(componente, [
-    "peso_g",
-    "peso_estimado_g",
-    "peso_componente_g",
-    "peso_gramas",
-    "peso_unitario_g",
-    "peso_unit_g",
-    "peso_liquido_g",
-    "peso_stl_g",
-    "massa_g",
-    "gramas",
-    "peso_componente",
-    "peso",
-  ]);
-
-  const quantidadeNo3mf = numberFromFields(arquivo3mf, [
-    "qtd_componente",
-    "quantidade_componentes",
-    "quantidade_componente",
-    "qtde_componente",
-    "qtd_stl",
-    "quantidade_stl",
-    "qtd_pecas",
-    "quantidade_pecas",
-    "quantidade",
-    "qtd",
-    "qtde",
-  ]);
-
-  if (pesoComponente === null || quantidadeNo3mf === null) return "";
-
-  return String(Number((pesoComponente * quantidadeNo3mf).toFixed(3)));
-}
-
-function calcularPesoEstimadoPedido(optionsData: OptionsPayload | null, idPedidoTexto: string) {
-  if (!optionsData || !idPedidoTexto) return "";
-
-  const idPedido = Number(idPedidoTexto);
-  if (Number.isNaN(idPedido)) return "";
-
-  const pedido = (optionsData.pedidos || []).find(
-    (item) => Number(item.id_pedido) === idPedido
-  );
-
-  const id3mf = numberFromFields(pedido, [
-    "id_3mf",
-    "id_arquivo_3mf",
-    "id_arquivo",
-    "arquivo_3mf_id",
-  ]);
-
-  if (id3mf === null) return "";
-
-  return calcularPesoEstimadoPor3mf(optionsData, String(id3mf));
-}
-
 export default function PlanoProducaoPage() {
   const [planos, setPlanos] = useState<PlanoProducao[]>([]);
   const [options, setOptions] = useState<OptionsPayload | null>(null);
@@ -276,7 +178,8 @@ export default function PlanoProducaoPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [activePlano, setActivePlano] = useState<PlanoProducao | null>(null); const [alertaEstoque, setAlertaEstoque] = useState<{ tipo: "ok" | "erro" | "aviso"; texto: string } | null>(null);
+  const [activePlano, setActivePlano] = useState<PlanoProducao | null>(null);
+  const [alertaEstoque, setAlertaEstoque] = useState<{ tipo: "ok" | "erro" | "aviso"; texto: string } | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -374,11 +277,7 @@ export default function PlanoProducaoPage() {
         ""
     );
 
-    const arquivo3mf = (options.arquivos3mf || []).find(
-      (item) => Number(item.id_3mf) === id3mf
-    );
-
-    if (!arquivo3mf) {
+    if (Number.isNaN(id3mf)) {
       setAlertaEstoque({
         tipo: "aviso",
         texto: "Não foi possível validar o estoque: o pedido selecionado não possui Arquivo 3MF associado.",
@@ -386,37 +285,21 @@ export default function PlanoProducaoPage() {
       return;
     }
 
-    const idComponente = numberFromFields(arquivo3mf, [
-      "id_componente_stl",
-      "id_componente",
-      "id_componente_fk",
-      "componente_id",
-    ]);
-
-    const qtdComponente = numberFromFields(arquivo3mf, [
-      "qtd_componente",
-      "quantidade_componentes",
-      "quantidade_componente",
-      "qtde_componente",
-      "quantidade",
-      "qtd",
-      "qtde",
-    ]) || 1;
-
-    const componente = (options.componentes || []).find((item) => {
+    const itens3mf = (options.arquivos3mf || []).filter((item) => {
       const ids = [
-        numberFromFields(item, ["id_componente_stl"]),
-        numberFromFields(item, ["id_componente"]),
+        numberFromFields(item, ["id_3mf"]),
         numberFromFields(item, ["id"]),
-      ].filter((value) => value !== null);
+        numberFromFields(item, ["id_arquivo_3mf"]),
+        numberFromFields(item, ["arquivo_3mf_id"]),
+      ].filter((value): value is number => value !== null);
 
-      return idComponente !== null && ids.includes(idComponente);
+      return ids.includes(id3mf);
     });
 
-    if (!componente) {
+    if (itens3mf.length === 0) {
       setAlertaEstoque({
         tipo: "aviso",
-        texto: "Não foi possível validar o estoque: o componente do Arquivo 3MF não foi encontrado.",
+        texto: "Não foi possível validar o estoque: o Arquivo 3MF do pedido não foi encontrado.",
       });
       return;
     }
@@ -430,36 +313,90 @@ export default function PlanoProducaoPage() {
       }
     }
 
-    const necessidades: { idFilamento: number; necessario: number; disponivel: number; label: string }[] = [];
+    const necessidadePorFilamento = new Map<number, number>();
 
-    for (let i = 1; i <= 8; i++) {
-      const idFilamento = numberFromFields(componente, [
-        `id_filamento${i}`,
-        `id_filamento_${i}`,
+    for (const item3mf of itens3mf) {
+      const idComponente = numberFromFields(item3mf, [
+        "id_componente_stl",
+        "id_componente",
+        "id_componente_fk",
+        "componente_id",
+        "id_stl",
+        "stl_id",
       ]);
-      const gramasPorComponente = numberFromFields(componente, [
-        `gramas_filamento_${i}`,
-        `gramas_filamento${i}`,
-      ]);
 
-      if (idFilamento === null || gramasPorComponente === null || gramasPorComponente <= 0) continue;
+      if (idComponente === null) continue;
 
-      const necessario = Number((gramasPorComponente * qtdComponente).toFixed(3));
-      const disponivel = Number((estoquePorFilamento.get(idFilamento) || 0).toFixed(3));
-      const filamento = (options.filamentos || []).find((item) => Number(item.id_filamento) === idFilamento);
-      const label = labelFrom(
-        filamento,
-        ["label_filamento", "nome_filamento", "nome", "descricao", "material_filamento", "material"],
-        `Filamento ${idFilamento}`
-      );
+      const qtdComponente = numberFromFields(item3mf, [
+        "qtd_componente",
+        "quantidade_componentes",
+        "quantidade_componente",
+        "qtde_componente",
+        "qtd_stl",
+        "quantidade_stl",
+        "qtd_pecas",
+        "quantidade_pecas",
+        "quantidade",
+        "qtd",
+        "qtde",
+      ]) || 1;
 
-      necessidades.push({ idFilamento, necessario, disponivel, label });
+      const componente = (options.componentes || []).find((item) => {
+        const ids = [
+          numberFromFields(item, ["id_componente_stl"]),
+          numberFromFields(item, ["id_componente"]),
+          numberFromFields(item, ["id"]),
+          numberFromFields(item, ["componente_id"]),
+        ].filter((value): value is number => value !== null);
+
+        return ids.includes(idComponente);
+      });
+
+      if (!componente) continue;
+
+      for (let i = 1; i <= 8; i++) {
+        const idFilamento = numberFromFields(componente, [
+          `id_filamento${i}`,
+          `id_filamento_${i}`,
+        ]);
+        const gramasPorComponente = numberFromFields(componente, [
+          `gramas_filamento_${i}`,
+          `gramas_filamento${i}`,
+        ]);
+
+        if (idFilamento === null || gramasPorComponente === null || gramasPorComponente <= 0) continue;
+
+        const necessario = gramasPorComponente * qtdComponente;
+        necessidadePorFilamento.set(
+          idFilamento,
+          (necessidadePorFilamento.get(idFilamento) || 0) + necessario
+        );
+      }
     }
+
+    const necessidades = Array.from(necessidadePorFilamento.entries()).map(
+      ([idFilamento, necessario]) => {
+        const disponivel = estoquePorFilamento.get(idFilamento) || 0;
+        const filamento = (options.filamentos || []).find((item) => Number(item.id_filamento) === idFilamento);
+        const label = labelFrom(
+          filamento,
+          ["label_filamento", "nome_filamento", "nome", "descricao", "material_filamento", "material"],
+          `Filamento ${idFilamento}`
+        );
+
+        return {
+          idFilamento,
+          necessario: Number(necessario.toFixed(3)),
+          disponivel: Number(disponivel.toFixed(3)),
+          label,
+        };
+      }
+    );
 
     if (necessidades.length === 0) {
       setAlertaEstoque({
         tipo: "aviso",
-        texto: "Não há consumo de filamento cadastrado para o componente deste pedido.",
+        texto: "Não há consumo de filamento cadastrado para os componentes deste pedido.",
       });
       return;
     }
@@ -516,7 +453,8 @@ export default function PlanoProducaoPage() {
     setForm(EMPTY_FORM);
     setFormOpen(true);
     setMensagem("");
-    setErro(""); setAlertaEstoque(null);
+    setErro("");
+    setAlertaEstoque(null);
   }
 
   function editarPlano(plano: PlanoProducao) {
@@ -530,7 +468,6 @@ export default function PlanoProducaoPage() {
       ordem_fila: String(plano.ordem_fila ?? ""),
       prioridade: plano.prioridade || "Média",
       progresso: String(plano.progresso ?? 0),
-      peso_estimado_g: String(plano.peso_estimado_g ?? ""),
     });
     setFormOpen(true);
     setMensagem("");
@@ -708,14 +645,13 @@ export default function PlanoProducaoPage() {
                 value={form.id_pedido}
                 onChange={(e) => {
                   const pedido = (options?.pedidos || []).find((p) => String(p.id_pedido) === e.target.value);
-                          const id3mf = pedido?.id_3mf ? String(pedido.id_3mf) : "";
-                          const pesoEstimado = id3mf ? calcularPesoEstimadoPor3mf(options, id3mf) : calcularPesoEstimadoPedido(options, e.target.value);
-                          setForm((f) => ({
-                            ...f,
-                            id_pedido: e.target.value,
-                            id_3mf: id3mf || f.id_3mf,
-                            peso_estimado_g: pesoEstimado,
-                          }));
+                  const id3mf = pedido?.id_3mf ? String(pedido.id_3mf) : "";
+                  setForm((f) => ({
+                    ...f,
+                    id_pedido: e.target.value,
+                    id_3mf: id3mf || f.id_3mf,
+                  }));
+                  avaliarEstoquePedido(e.target.value, id3mf);
                 }}
                 disabled={Boolean(editingId)}
                 required
@@ -759,7 +695,10 @@ export default function PlanoProducaoPage() {
             <Field label="Arquivo 3MF">
               <select
                 value={form.id_3mf}
-                onChange={(e) => setForm((f) => ({ ...f, id_3mf: e.target.value }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, id_3mf: e.target.value }));
+                  avaliarEstoquePedido(form.id_pedido, e.target.value);
+                }}
                 className="field"
               >
                 <option value="">Selecione</option>
@@ -829,6 +768,20 @@ export default function PlanoProducaoPage() {
                 className="field"
               />
             </Field>
+
+            {alertaEstoque && (
+              <div
+                className={`rounded-2xl border px-4 py-3 text-sm font-bold xl:col-span-4 ${
+                  alertaEstoque.tipo === "ok"
+                    ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                    : alertaEstoque.tipo === "erro"
+                      ? "border-red-400/30 bg-red-400/10 text-red-300"
+                      : "border-amber-400/30 bg-amber-400/10 text-amber-300"
+                }`}
+              >
+                {alertaEstoque.texto}
+              </div>
+            )}
 
             <div className="flex items-end gap-3 xl:col-span-4">
               <button
