@@ -278,7 +278,14 @@ export default function PlanoProducaoPage() {
     setPlanos((prev)=>prev.map((p)=>p.id_pedido===idPedido?{...p,status_producao:destino,progresso:destino==="finalizado"?100:destino==="producao"?p.progresso||1:p.progresso||0}:p));
     const res=await fetch("/api/plano-producao",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({...planoAtual,status_producao:destino,progresso:destino==="finalizado"?100:planoAtual.progresso||0})});
     const result=await res.json();
-    if (!res.ok||!result.ok) { setPlanos(backup); setErro(apiError(result)); }
+    if (!res.ok||!result.ok) { setPlanos(backup); setErro(apiError(result)); return; }
+
+    // Debita estoque ao finalizar
+    if (destino==="finalizado" && planoAtual.id_3mf) {
+      const rd=await fetch("/api/estoque-debito",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id_3mf:planoAtual.id_3mf})});
+      const dd=await rd.json();
+      if (!rd.ok||!dd.ok) setErro(`Aviso: pedido finalizado mas erro ao debitar estoque — ${dd.error}`);
+    }
   }
 
   async function confirmarFalha() {
@@ -317,7 +324,28 @@ export default function PlanoProducaoPage() {
       const d2 = await r2.json();
       if (!r2.ok || !d2.ok) throw new Error(apiError(d2));
 
-      // 4. Sucesso — fecha modal, mantém card em falha (já setado no passo 1)
+      // 4. Debita material perdido no estoque (filamento principal do componente)
+      if (snap.gramasPerdido && planoAtual?.id_3mf) {
+        // Descobre o filamento principal via 3MF → componente → id_filamento1
+        const arqRes = await fetch(`/api/options`);
+        const arqData = await arqRes.json();
+        const opts = arqData?.data?.[0] as { arquivos3mf?: Record<string,unknown>[]; componentes?: Record<string,unknown>[] } | undefined;
+        const arq3mf = (opts?.arquivos3mf||[]).find((a) => Number(a.id_3mf) === planoAtual.id_3mf);
+        const idComp = arq3mf ? Number(arq3mf.id_componente_stl) : null;
+        const comp   = idComp ? (opts?.componentes||[]).find((c) => Number(c.id_componente_stl) === idComp) : null;
+        const idFil1 = comp ? Number(comp.id_filamento1) : null;
+        if (idFil1) {
+          const rd = await fetch("/api/estoque-debito", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id_filamento: idFil1, gramas: Number(snap.gramasPerdido) }),
+          });
+          const dd = await rd.json();
+          if (!rd.ok || !dd.ok) console.warn("Aviso: falha registrada mas erro ao debitar estoque:", dd.error);
+        }
+      }
+
+      // 5. Sucesso — fecha modal, mantém card em falha (já setado no passo 1)
       setFalhaEmAndamento(null);
       setMensagem("Falha registrada com sucesso.");
     } catch (err) {
