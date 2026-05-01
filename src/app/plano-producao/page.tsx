@@ -294,7 +294,7 @@ export default function PlanoProducaoPage() {
         quant_mat_perdido:falhaEmAndamento.gramasPerdido?Number(falhaEmAndamento.gramasPerdido):null,
       })});
       const d2=await r2.json(); if (!r2.ok||!d2.ok) throw new Error(apiError(d2));
-      setMensagem("Falha registrada com sucesso."); setFalhaEmAndamento(null); await carregarDados();
+      setMensagem("Falha registrada com sucesso."); setFalhaEmAndamento(null);
     } catch(err) {
       setPlanos((prev)=>prev.map((p)=>p.id_pedido===falhaEmAndamento.idPedido?{...p,status_producao:falhaEmAndamento.statusAnterior}:p));
       setErro(err instanceof Error?err.message:"Erro ao registrar falha."); setFalhaEmAndamento(null);
