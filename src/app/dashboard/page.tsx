@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PageShell, useAuthGuard } from "../_shared";
+import { GlassCard, PageShell, useAuthGuard } from "../_shared";
 
 type DashboardData = {
   total_clientes: number;
@@ -54,13 +54,13 @@ export default function DashboardPage() {
     <PageShell title="Dashboard" description={`Métricas reais do sistema. Usuário logado: ${email || ""}`}>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {cards.map(([label, value]) => (
-          <div key={String(label)} className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-            <div className="text-sm text-zinc-800">{label}</div>
-            <div className="mt-2 text-3xl font-bold text-black">{String(value)}</div>
-          </div>
+          <GlassCard key={String(label)}>
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-400">{label}</p>
+            <p className="mt-2 text-3xl font-black text-white">{String(value)}</p>
+          </GlassCard>
         ))}
       </div>
-      {erro && <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{erro}</div>}
+      {erro && <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">{erro}</div>}
     </PageShell>
   );
 }
