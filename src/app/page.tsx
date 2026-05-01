@@ -17,7 +17,6 @@ import {
   Printer,
   ShieldCheck,
   Sparkles,
-  TriangleAlert,
   UserPlus,
   Users,
 } from "lucide-react";
@@ -94,12 +93,6 @@ const links: HomeLink[] = [
     titulo: "Impressoras",
     descricao: "Cadastro, disponibilidade e capacidade produtiva.",
     icon: Printer,
-  },
-  {
-    href: "/falhas",
-    titulo: "Falhas",
-    descricao: "Registro e rastreabilidade das falhas de produção.",
-    icon: TriangleAlert,
   },
   {
     href: "/cotacoes",
@@ -211,7 +204,7 @@ export default function Home() {
 
             <p className="mt-5 max-w-2xl text-base leading-7 text-slate-400">
               Acesse rapidamente pedidos, plano de produção, estoque, execução,
-              falhas, componentes e cotações em uma interface única, moderna e
+              componentes e cotações em uma interface única, moderna e
               orientada à operação.
             </p>
 
