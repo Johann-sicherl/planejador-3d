@@ -8,7 +8,7 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  AlertTriangle, CheckCircle2, Clock, Edit3, Factory,
+  AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Clock, Edit3, Factory,
   GripVertical, Package, Plus, Printer, Save, Sparkles, Trash2, X,
 } from "lucide-react";
 import { Feedback, PageShell } from "../_shared";
@@ -553,114 +553,172 @@ function CardPlano({plano,nomes,flutuando=false,falhaEmAndamento,onFalhaChange,o
   const isFalha=plano.status_producao==="falha";
   const aguardaForm=!!falhaEmAndamento;
 
+  // Card começa colapsado; expande ao clicar no chevron
+  const [expandido,setExpandido]=useState(false);
+
   const corPrioridade:Record<string,string>={
     Baixa:"border-emerald-500/30 bg-emerald-500/15 text-emerald-300",
     Media:"border-yellow-500/30 bg-yellow-500/15 text-yellow-300",
+    Média:"border-yellow-500/30 bg-yellow-500/15 text-yellow-300",
     Alta:"border-orange-500/30 bg-orange-500/15 text-orange-300",
     Urgente:"border-red-500/30 bg-red-500/15 text-red-300",
   };
 
+  // Quando o modal de falha abre, força expansão para mostrar os campos
+  const deveExpandir = expandido || aguardaForm || flutuando;
+
   return (
     <article ref={setNodeRef} style={style}
-      className={`rounded-3xl border shadow-xl backdrop-blur transition-all ${isFalha?"border-red-500/30 bg-red-950/60":"border-white/10 bg-slate-900/90"} ${isDragging?"opacity-40":"opacity-100"} ${flutuando?"rotate-2 scale-105 shadow-2xl shadow-cyan-500/20":"hover:-translate-y-1 hover:border-cyan-400/30"}`}>
+      className={`rounded-2xl border shadow-lg backdrop-blur transition-all ${isFalha?"border-red-500/30 bg-red-950/60":"border-white/10 bg-slate-900/90"} ${isDragging?"opacity-40":"opacity-100"} ${flutuando?"rotate-2 scale-105 shadow-2xl shadow-cyan-500/20":""}`}>
 
-      <div className="p-4">
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              {isFalha?<AlertTriangle className="h-4 w-4 text-red-400"/>:<Package className="h-4 w-4 text-cyan-400"/>}
-              <h3 className={`font-black ${isFalha?"text-red-200":"text-white"}`}>
-                {nomes.pedidos.get(Number(plano.id_pedido))||`Pedido ${plano.id_pedido}`}
-              </h3>
-            </div>
-            <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
-              <Printer className="h-3.5 w-3.5"/>
-              <span>{plano.id_impressora?nomes.impressoras.get(Number(plano.id_impressora)):"Impressora nao definida"}</span>
-            </div>
-          </div>
-          {!aguardaForm&&(
-            <button className="cursor-grab rounded-xl bg-white/10 p-2 text-slate-300 active:cursor-grabbing" {...attributes} {...listeners}>
-              <GripVertical className="h-4 w-4"/>
-            </button>
-          )}
-        </div>
+      {/* ── Linha colapsada (sempre visível) ── */}
+      <div className="flex items-center gap-2 px-3 py-2">
 
-        <div className="mb-3 flex flex-wrap gap-2">
-          <span className={`rounded-full border px-3 py-1 text-xs font-bold ${corPrioridade[prioridade]||corPrioridade["Média"]}`}>{prioridade}</span>
-          {plano.status_producao==="finalizado"&&(
-            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-300">
-              <CheckCircle2 className="h-3 w-3"/> Concluido
-            </span>
-          )}
-          {isFalha&&!aguardaForm&&(
-            <span className="inline-flex items-center gap-1 rounded-full border border-red-500/30 bg-red-500/15 px-3 py-1 text-xs font-bold text-red-300">
-              <AlertTriangle className="h-3 w-3"/> Falha registrada
-            </span>
-          )}
-        </div>
+        {/* Drag handle */}
+        {!aguardaForm&&(
+          <button className="cursor-grab shrink-0 rounded-lg bg-white/5 p-1 text-slate-500 active:cursor-grabbing hover:text-slate-300 hover:bg-white/10 transition-colors" {...attributes} {...listeners}>
+            <GripVertical className="h-3.5 w-3.5"/>
+          </button>
+        )}
 
-        <div className="space-y-2 rounded-2xl bg-black/20 p-3 text-sm text-slate-300">
-          <div className="flex items-center gap-2"><Factory className="h-4 w-4 text-violet-300"/><span>{plano.id_3mf?nomes.arquivos3mf.get(Number(plano.id_3mf)):"Arquivo 3MF nao definido"}</span></div>
-          <div className="flex items-center gap-2"><Clock className="h-4 w-4 text-cyan-300"/><span>{formatTempo(plano.tempo_impressao_min)}</span></div>
-        </div>
+        {/* Ícone de status */}
+        <span className="shrink-0">
+          {isFalha
+            ? <AlertTriangle className="h-3.5 w-3.5 text-red-400"/>
+            : <Package className="h-3.5 w-3.5 text-cyan-400"/>}
+        </span>
 
+        {/* Nome do pedido */}
+        <span className={`flex-1 truncate text-sm font-black ${isFalha?"text-red-200":"text-white"}`}>
+          {nomes.pedidos.get(Number(plano.id_pedido))||`Pedido ${plano.id_pedido}`}
+        </span>
+
+        {/* Badge de prioridade (sempre visível, compacto) */}
+        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${corPrioridade[prioridade]||corPrioridade["Média"]}`}>
+          {prioridade}
+        </span>
+
+        {/* Barra de progresso mini (somente se não for falha) */}
         {!isFalha&&(
-          <div className="mt-3">
-            <div className="mb-1 flex justify-between text-xs text-slate-400"><span>Progresso</span><span>{progresso}%</span></div>
-            <div className="h-2 overflow-hidden rounded-full bg-white/10">
+          <div className="hidden sm:flex shrink-0 items-center gap-1">
+            <div className="h-1.5 w-12 overflow-hidden rounded-full bg-white/10">
               <div className="h-full rounded-full bg-cyan-400" style={{width:`${Math.min(Math.max(progresso,0),100)}%`}}/>
             </div>
+            <span className="text-[10px] text-slate-500">{progresso}%</span>
           </div>
+        )}
+
+        {/* Botão expandir/colapsar */}
+        {!aguardaForm&&(
+          <button
+            onClick={()=>setExpandido((v)=>!v)}
+            className="shrink-0 rounded-lg bg-white/5 p-1 text-slate-400 hover:bg-white/10 hover:text-slate-200 transition-colors"
+            title={expandido?"Colapsar":"Expandir"}
+          >
+            {expandido
+              ? <ChevronUp className="h-3.5 w-3.5"/>
+              : <ChevronDown className="h-3.5 w-3.5"/>}
+          </button>
         )}
       </div>
 
-      {/* ── Modal inline de falha ── */}
-      {aguardaForm&&falhaEmAndamento&&(
-        <div className="mx-3 mb-3 rounded-2xl border border-red-500/40 bg-black/40 p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-red-400"/>
-            <p className="text-sm font-black text-red-300">Registrar detalhes da falha</p>
-          </div>
-          <div className="space-y-3">
-            <div>
-              <label className="mb-1 block text-xs font-bold text-red-300/80">Material perdido (g) *</label>
-              <input type="number" min="0" step="0.1" value={falhaEmAndamento.gramasPerdido}
-                onChange={(e)=>onFalhaChange?.("gramasPerdido",e.target.value)}
-                placeholder="Ex.: 45.5"
-                className="w-full rounded-xl border border-red-500/30 bg-slate-950/80 px-3 py-2 text-sm text-white outline-none focus:border-red-400 placeholder:text-slate-600"/>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-bold text-red-300/80">Tempo perdido (min) *</label>
-              <input type="number" min="0" value={falhaEmAndamento.tempoPerdido}
-                onChange={(e)=>onFalhaChange?.("tempoPerdido",e.target.value)}
-                placeholder="Ex.: 120"
-                className="w-full rounded-xl border border-red-500/30 bg-slate-950/80 px-3 py-2 text-sm text-white outline-none focus:border-red-400 placeholder:text-slate-600"/>
-            </div>
-          </div>
-          <div className="mt-4 flex gap-2">
-            <button onClick={onFalhaConfirm}
-              disabled={falhaEmAndamento.salvando||!falhaEmAndamento.gramasPerdido||!falhaEmAndamento.tempoPerdido}
-              className="flex-1 rounded-xl bg-red-500 px-3 py-2 text-xs font-black text-white hover:bg-red-400 disabled:opacity-50 disabled:cursor-not-allowed">
-              {falhaEmAndamento.salvando?"Salvando...":"Confirmar falha"}
-            </button>
-            <button onClick={onFalhaCancel} disabled={falhaEmAndamento.salvando}
-              className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-300 hover:bg-white/10">
-              Cancelar
-            </button>
-          </div>
-        </div>
-      )}
+      {/* ── Conteúdo expandido ── */}
+      {deveExpandir&&(
+        <>
+          <div className="border-t border-white/5 px-3 pb-3 pt-3 space-y-3">
 
-      {/* Botoes editar/excluir */}
-      {!flutuando&&!aguardaForm&&(
-        <div className="mx-3 mb-3 flex gap-2">
-          <button onClick={()=>onEdit?.(plano)} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-xs font-bold text-cyan-300 hover:bg-cyan-400/20">
-            <Edit3 className="h-3.5 w-3.5"/> Editar
-          </button>
-          <button onClick={()=>onDelete?.(plano.id_pedido)} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-red-400/30 bg-red-400/10 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-400/20">
-            <Trash2 className="h-3.5 w-3.5"/> Excluir
-          </button>
-        </div>
+            {/* Impressora */}
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <Printer className="h-3.5 w-3.5 shrink-0"/>
+              <span>{plano.id_impressora?nomes.impressoras.get(Number(plano.id_impressora)):"Impressora nao definida"}</span>
+            </div>
+
+            {/* Badges de status especiais */}
+            <div className="flex flex-wrap gap-2">
+              {plano.status_producao==="finalizado"&&(
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 text-xs font-bold text-emerald-300">
+                  <CheckCircle2 className="h-3 w-3"/> Concluido
+                </span>
+              )}
+              {isFalha&&!aguardaForm&&(
+                <span className="inline-flex items-center gap-1 rounded-full border border-red-500/30 bg-red-500/15 px-2.5 py-0.5 text-xs font-bold text-red-300">
+                  <AlertTriangle className="h-3 w-3"/> Falha registrada
+                </span>
+              )}
+            </div>
+
+            {/* Detalhes: 3MF + Tempo */}
+            <div className="space-y-1.5 rounded-xl bg-black/20 px-3 py-2 text-xs text-slate-300">
+              <div className="flex items-center gap-2">
+                <Factory className="h-3.5 w-3.5 shrink-0 text-violet-300"/>
+                <span className="truncate">{plano.id_3mf?nomes.arquivos3mf.get(Number(plano.id_3mf)):"Arquivo 3MF nao definido"}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Clock className="h-3.5 w-3.5 shrink-0 text-cyan-300"/>
+                <span>{formatTempo(plano.tempo_impressao_min)}</span>
+              </div>
+            </div>
+
+            {/* Barra de progresso completa */}
+            {!isFalha&&(
+              <div>
+                <div className="mb-1 flex justify-between text-xs text-slate-400"><span>Progresso</span><span>{progresso}%</span></div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full bg-cyan-400 transition-all" style={{width:`${Math.min(Math.max(progresso,0),100)}%`}}/>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Modal inline de falha ── */}
+          {aguardaForm&&falhaEmAndamento&&(
+            <div className="mx-3 mb-3 rounded-xl border border-red-500/40 bg-black/40 p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 text-red-400"/>
+                <p className="text-xs font-black text-red-300">Registrar detalhes da falha</p>
+              </div>
+              <div className="space-y-2">
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-red-300/80">Material perdido (g) *</label>
+                  <input type="number" min="0" step="0.1" value={falhaEmAndamento.gramasPerdido}
+                    onChange={(e)=>onFalhaChange?.("gramasPerdido",e.target.value)}
+                    placeholder="Ex.: 45.5"
+                    className="w-full rounded-lg border border-red-500/30 bg-slate-950/80 px-3 py-1.5 text-xs text-white outline-none focus:border-red-400 placeholder:text-slate-600"/>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-red-300/80">Tempo perdido (min) *</label>
+                  <input type="number" min="0" value={falhaEmAndamento.tempoPerdido}
+                    onChange={(e)=>onFalhaChange?.("tempoPerdido",e.target.value)}
+                    placeholder="Ex.: 120"
+                    className="w-full rounded-lg border border-red-500/30 bg-slate-950/80 px-3 py-1.5 text-xs text-white outline-none focus:border-red-400 placeholder:text-slate-600"/>
+                </div>
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button onClick={onFalhaConfirm}
+                  disabled={falhaEmAndamento.salvando||!falhaEmAndamento.gramasPerdido||!falhaEmAndamento.tempoPerdido}
+                  className="flex-1 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-black text-white hover:bg-red-400 disabled:opacity-50 disabled:cursor-not-allowed">
+                  {falhaEmAndamento.salvando?"Salvando...":"Confirmar falha"}
+                </button>
+                <button onClick={onFalhaCancel} disabled={falhaEmAndamento.salvando}
+                  className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/10">
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Botoes editar/excluir */}
+          {!flutuando&&!aguardaForm&&(
+            <div className="mx-3 mb-3 flex gap-2">
+              <button onClick={()=>onEdit?.(plano)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-2 py-1.5 text-xs font-bold text-cyan-300 hover:bg-cyan-400/20">
+                <Edit3 className="h-3 w-3"/> Editar
+              </button>
+              <button onClick={()=>onDelete?.(plano.id_pedido)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-400/30 bg-red-400/10 px-2 py-1.5 text-xs font-bold text-red-300 hover:bg-red-400/20">
+                <Trash2 className="h-3 w-3"/> Excluir
+              </button>
+            </div>
+          )}
+        </>
       )}
     </article>
   );
