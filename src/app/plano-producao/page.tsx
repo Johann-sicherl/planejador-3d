@@ -283,21 +283,50 @@ export default function PlanoProducaoPage() {
 
   async function confirmarFalha() {
     if (!falhaEmAndamento) return;
-    setFalhaEmAndamento((prev)=>prev?{...prev,salvando:true}:null);
-    const planoAtual=planos.find((p)=>p.id_pedido===falhaEmAndamento.idPedido);
+
+    // Snapshot imutável — evita perda de referência após setState
+    const snap = { ...falhaEmAndamento };
+    const planoAtual = planos.find((p) => p.id_pedido === snap.idPedido);
+
+    // 1. Marca como salvando e garante card na coluna falha ANTES das chamadas async
+    setFalhaEmAndamento((prev) => prev ? { ...prev, salvando: true } : null);
+    setPlanos((prev) =>
+      prev.map((p) => p.id_pedido === snap.idPedido ? { ...p, status_producao: "falha" } : p)
+    );
+
     try {
-      const r1=await fetch("/api/plano-producao",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({...planoAtual,status_producao:"falha"})});
-      const d1=await r1.json(); if (!r1.ok||!d1.ok) throw new Error(apiError(d1));
-      const r2=await fetch("/api/falhas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-        id_3mf:planoAtual?.id_3mf??null,
-        tempo_impressao_min_perdido:falhaEmAndamento.tempoPerdido?Number(falhaEmAndamento.tempoPerdido):null,
-        quant_mat_perdido:falhaEmAndamento.gramasPerdido?Number(falhaEmAndamento.gramasPerdido):null,
-      })});
-      const d2=await r2.json(); if (!r2.ok||!d2.ok) throw new Error(apiError(d2));
-      setMensagem("Falha registrada com sucesso."); setFalhaEmAndamento(null);
-    } catch(err) {
-      setPlanos((prev)=>prev.map((p)=>p.id_pedido===falhaEmAndamento.idPedido?{...p,status_producao:falhaEmAndamento.statusAnterior}:p));
-      setErro(err instanceof Error?err.message:"Erro ao registrar falha."); setFalhaEmAndamento(null);
+      // 2. Persiste status_producao = 'falha' no banco
+      const r1 = await fetch("/api/plano-producao", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...planoAtual, status_producao: "falha" }),
+      });
+      const d1 = await r1.json();
+      if (!r1.ok || !d1.ok) throw new Error(apiError(d1));
+
+      // 3. Grava registro em falhas_producao
+      const r2 = await fetch("/api/falhas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id_3mf: planoAtual?.id_3mf ?? null,
+          tempo_impressao_min_perdido: snap.tempoPerdido ? Number(snap.tempoPerdido) : null,
+          quant_mat_perdido: snap.gramasPerdido ? Number(snap.gramasPerdido) : null,
+        }),
+      });
+      const d2 = await r2.json();
+      if (!r2.ok || !d2.ok) throw new Error(apiError(d2));
+
+      // 4. Sucesso — fecha modal, mantém card em falha (já setado no passo 1)
+      setFalhaEmAndamento(null);
+      setMensagem("Falha registrada com sucesso.");
+    } catch (err) {
+      // Revert: volta card para coluna anterior apenas se houve erro
+      setPlanos((prev) =>
+        prev.map((p) => p.id_pedido === snap.idPedido ? { ...p, status_producao: snap.statusAnterior } : p)
+      );
+      setErro(err instanceof Error ? err.message : "Erro ao registrar falha.");
+      setFalhaEmAndamento(null);
     }
   }
 
