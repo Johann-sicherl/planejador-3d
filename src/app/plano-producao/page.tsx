@@ -708,7 +708,7 @@ function Indicador({titulo,valor,subtitulo,vermelho=false}:{titulo:string;valor:
   );
 }
 
-function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,onEdit,onDelete}:{
+function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,onMover,onEdit,onDelete}:{
   coluna:{id:StatusProducao;titulo:string;subtitulo:string;bordaTopo:string};
   planos:PlanoProducao[]; nomes:Nomes; options:OptionsPayload|null; falhaEmAndamento:FalhaEmAndamento|null;
   onFalhaChange:(field:"gramasPerdido"|"tempoPerdido",value:string)=>void;
@@ -761,6 +761,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
   finalizacaoEmAndamento?:FinalizacaoEmAndamento|null;
   onFinSlotChange?:(idx:number,val:string)=>void;
   onFinConfirm?:()=>void; onFinCancel?:()=>void;
+  onMover?:(idPedido:number,direcao:"avancar"|"recuar")=>void;
   onEdit?:(plano:PlanoProducao)=>void; onDelete?:(idPedido:number)=>void;
 }) {
   const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useSortable({
