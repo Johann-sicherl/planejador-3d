@@ -198,7 +198,8 @@ export default function Page() {
               className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-white outline-none focus:border-cyan-400"
             >
               <option value="">Selecione</option>
-              {(options?.arquivos3mf || []).map((item) => (
+              {/* Deduplica por id_3mf para o dropdown */}
+              {[...new Map((options?.arquivos3mf || []).map((i) => [Number(i.id_3mf), i])).values()].map((item) => (
                 <option key={String(item.id_3mf)} value={String(item.id_3mf)}>
                   {labelFrom(item, ["nome_arquivo_3mf", "nome_arquivo", "filename", "arquivo", "descricao"], "Arquivo 3MF sem nome")}
                 </option>

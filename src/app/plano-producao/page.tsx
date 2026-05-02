@@ -160,7 +160,7 @@ export default function PlanoProducaoPage() {
     const arquivos3mf=new Map<number,string>();
     for (const i of options?.clientes||[]) clientes.set(Number(i.id_cliente),labelFrom(i,["nome_cliente","cliente","nome"],"Cliente sem nome"));
     for (const i of options?.impressoras||[]) impressoras.set(Number(i.id_impressora),labelFrom(i,["nome_impressora","nome","modelo"],"Impressora sem nome"));
-    for (const i of options?.arquivos3mf||[]) arquivos3mf.set(Number(i.id_3mf),labelFrom(i,["nome_arquivo_3mf","nome_arquivo","filename"],"Arquivo 3MF sem nome"));
+    for (const i of options?.arquivos3mf||[]) { const id=Number(i.id_3mf); if(!arquivos3mf.has(id)) arquivos3mf.set(id,labelFrom(i,["nome_arquivo_3mf","nome_arquivo","filename"],"Arquivo 3MF sem nome")); }
     for (const i of options?.pedidos||[]) pedidos.set(Number(i.id_pedido),labelFrom(i,["label_pedido","nome_pedido","numero_pedido"],"Pedido cadastrado"));
     return {pedidos,clientes,impressoras,arquivos3mf};
   },[options]);
@@ -430,7 +430,7 @@ export default function PlanoProducaoPage() {
             <Field label="Arquivo 3MF">
               <select value={form.id_3mf} onChange={(e)=>setForm((f)=>({...f,id_3mf:e.target.value}))} className="field">
                 <option value="">Selecione</option>
-                {(options?.arquivos3mf||[]).map((a)=>(<option key={String(a.id_3mf)} value={String(a.id_3mf)}>{labelFrom(a,["nome_arquivo_3mf","nome_arquivo","filename"],"Arquivo 3MF sem nome")}</option>))}
+                {[...new Map((options?.arquivos3mf||[]).map((a)=>[Number(a.id_3mf),a])).values()].map((a)=>(<option key={String(a.id_3mf)} value={String(a.id_3mf)}>{labelFrom(a,["nome_arquivo_3mf","nome_arquivo","filename"],"Arquivo 3MF sem nome")}</option>))}
               </select>
             </Field>
 
@@ -694,7 +694,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                   <div className="mt-1.5 border-t border-white/10 pt-1.5 space-y-1">
                     {linhas.map((a,i)=>{
                       const comp=(options.componentes||[]).find((c)=>Number(c.id_componente_stl)===Number(a.id_componente_stl));
-                      const nome=comp?String(comp.nome_componente??comp.nome_stl??a.id_componente_stl):String(a.id_componente_stl);
+                      const nome=comp?String(comp.nome_componente??comp.nome??a.id_componente_stl):String(a.id_componente_stl??"?");
                       return (
                         <div key={i} className="flex items-center justify-between gap-2">
                           <span className="truncate text-slate-400">{nome}</span>
