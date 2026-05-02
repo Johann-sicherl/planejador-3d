@@ -210,13 +210,11 @@ export default function Page() {
     const fil    = filamentos.find((f) => f.id_filamento === row.id_filamento);
     const tara   = row.carretel?.peso_carretel_g ?? null;
     const bruto  = row.peso_com_carretel_g ?? null;
-    // Usa qtd_estoque_gramas do banco como fonte de verdade do liquido.
-    // O recalculo bruto-tara serve apenas como fallback se qtd_estoque_gramas for null.
-    const liquido = row.qtd_estoque_gramas != null
-      ? Number(row.qtd_estoque_gramas)
-      : (bruto !== null && tara !== null
-          ? Math.max(0, Number((bruto - tara).toFixed(1)))
-          : null);
+    // Calcula liquido = bruto - tara quando ambos existem (fonte de verdade)
+    // Fallback para qtd_estoque_gramas se nao tiver peso_com_carretel_g
+    const liquido = bruto !== null && tara !== null
+      ? Math.max(0, Number((bruto - tara).toFixed(1)))
+      : (row.qtd_estoque_gramas != null ? Number(row.qtd_estoque_gramas) : null);
     return {
       row,
       nome:     fil?.nome_filamento          ?? "-",
