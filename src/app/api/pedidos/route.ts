@@ -39,7 +39,7 @@ function sanitize(body: Body) {
 export async function GET() {
   const { data, error } = await supabase
     .from(TABLE)
-    .select("*")
+    .select("id_pedido, id_cliente, id_3mf, data_solic, data_entrega_prevista, data_entrega_realizada")
     .order(ID_COL, { ascending: true });
 
   if (error) {
