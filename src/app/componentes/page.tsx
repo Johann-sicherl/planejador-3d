@@ -64,6 +64,22 @@ export default function Page() {
 
   const [nome_componente, setNomeComponente] = useState("");
 
+  const [nomes_sel, setNomesSel] = useState<string[]>(Array(8).fill(""));
+  const [mats_sel,  setMatsSel]  = useState<string[]>(Array(8).fill(""));
+
+  function setNomeSel(idx: number, val: string) {
+    setNomesSel((p) => p.map((v, i) => i === idx ? val : v));
+    setMatsSel((p)  => p.map((v, i) => i === idx ? ""  : v));
+    [setIdFilamento1,setIdFilamento2,setIdFilamento3,setIdFilamento4,
+     setIdFilamento5,setIdFilamento6,setIdFilamento7,setIdFilamento8][idx]?.("");
+  }
+
+  function setMatSel(idx: number, val: string) {
+    setMatsSel((p) => p.map((v, i) => i === idx ? val : v));
+    [setIdFilamento1,setIdFilamento2,setIdFilamento3,setIdFilamento4,
+     setIdFilamento5,setIdFilamento6,setIdFilamento7,setIdFilamento8][idx]?.("");
+  }
+
   const [id_filamento1, setIdFilamento1] = useState("");
   const [id_filamento2, setIdFilamento2] = useState("");
   const [id_filamento3, setIdFilamento3] = useState("");
