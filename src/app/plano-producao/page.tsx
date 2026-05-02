@@ -722,7 +722,10 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
   onFinConfirm?:()=>void; onFinCancel?:()=>void;
   onEdit?:(plano:PlanoProducao)=>void; onDelete?:(idPedido:number)=>void;
 }) {
-  const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useSortable({id:String(plano.id_pedido)});
+  const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useSortable({
+    id:String(plano.id_pedido),
+    disabled: !!finalizacaoEmAndamento || !!falhaEmAndamento,
+  });
   const style={transform:CSS.Transform.toString(transform),transition};
   const prioridade=plano.prioridade||"Média";
   const progresso=plano.progresso??0;
@@ -965,7 +968,8 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                     </p>
                     <select
                       value={slot.idEstoqueEscolhido}
-                      onChange={(e) => onFinSlotChange?.(idx, e.target.value)}
+                      onChange={(e) => { e.stopPropagation(); onFinSlotChange?.(idx, e.target.value); }}
+                      onPointerDown={(e) => e.stopPropagation()}
                       className="w-full rounded-lg border border-white/10 bg-slate-950/80 px-2 py-1.5 text-xs text-white outline-none focus:border-emerald-400"
                     >
                       <option value="">Selecione o carretel</option>
