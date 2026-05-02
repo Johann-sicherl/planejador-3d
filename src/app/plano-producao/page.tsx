@@ -51,6 +51,20 @@ type FalhaEmAndamento = {
   gramasPerdido: string; tempoPerdido: string; salvando: boolean;
 };
 
+type SlotFilamento = {
+  idFilamento: number;
+  nomeFilamento: string;
+  gramas: number;
+  idEstoqueEscolhido: string; // id do registro estoque escolhido (id_filamento + rowid)
+};
+
+type FinalizacaoEmAndamento = {
+  idPedido: number;
+  statusAnterior: StatusProducao;
+  slots: SlotFilamento[];
+  salvando: boolean;
+};
+
 const EMPTY_FORM: FormState = {
   id_pedido: "", id_impressora: "", id_3mf: "", tempo_impressao_min: "",
   status_producao: "pedidos", ordem_fila: "", prioridade: "Média",
@@ -131,6 +145,7 @@ export default function PlanoProducaoPage() {
   const [activePlano,setActivePlano]=useState<PlanoProducao|null>(null);
   const [alertaEstoque,setAlertaEstoque]=useState<{tipo:"ok"|"erro"|"aviso";texto:string}|null>(null);
   const [falhaEmAndamento,setFalhaEmAndamento]=useState<FalhaEmAndamento|null>(null);
+  const [finalizacaoEmAndamento,setFinalizacaoEmAndamento]=useState<FinalizacaoEmAndamento|null>(null);
 
   const sensors=useSensors(useSensor(PointerSensor,{activationConstraint:{distance:8}}));
 
@@ -274,18 +289,44 @@ export default function PlanoProducaoPage() {
       return;
     }
 
+    // Ao mover para finalizado → abre modal de seleção de carreteis
+    if (destino === "finalizado" && planoAtual.id_3mf && options) {
+      // Monta slots de filamento a partir do 3MF → componentes
+      const linhas3mf = (options.arquivos3mf || []).filter((a) => Number(a.id_3mf) === Number(planoAtual.id_3mf));
+      const slots: SlotFilamento[] = [];
+      for (const linha of linhas3mf) {
+        const comp = (options.componentes || []).find((c) => Number(c.id_componente_stl) === Number(linha.id_componente_stl));
+        if (!comp) continue;
+        for (let i = 1; i <= 8; i++) {
+          const idFil  = Number((comp as Record<string,unknown>)[`id_filamento${i}`] || 0);
+          const gramas = Number((comp as Record<string,unknown>)[`gramas_filamento_${i}`] || 0);
+          if (!idFil || gramas <= 0) continue;
+          const fil = (options.filamentos || []).find((f) => Number(f.id_filamento) === idFil);
+          const nomeFil = String(fil?.nome_filamento ?? fil?.nome ?? `Filamento ${idFil}`);
+          const cor = fil?.cor_filamento ? ` ${fil.cor_filamento}` : "";
+          // Pré-seleciona o estoque com mais gramas para esse filamento
+          const estoqueDisp = (options.estoque || [])
+            .filter((e) => Number(e.id_filamento) === idFil)
+            .sort((a, b) => Number(b.qtd_estoque_gramas || 0) - Number(a.qtd_estoque_gramas || 0));
+          slots.push({
+            idFilamento: idFil,
+            nomeFilamento: `${nomeFil}${cor}`,
+            gramas: gramas * Number(linha.qtd_componente || 1),
+            idEstoqueEscolhido: estoqueDisp.length > 0 ? String(estoqueDisp[0].id_filamento) + "_" + String(estoqueDisp[0].localizacao ?? "0") : "",
+          });
+        }
+      }
+      // Move card visualmente
+      setPlanos((prev) => prev.map((p) => p.id_pedido === idPedido ? { ...p, status_producao: "finalizado", progresso: 100 } : p));
+      setFinalizacaoEmAndamento({ idPedido, statusAnterior: planoAtual.status_producao || "pedidos", slots, salvando: false });
+      return;
+    }
+
     const backup=planos;
     setPlanos((prev)=>prev.map((p)=>p.id_pedido===idPedido?{...p,status_producao:destino,progresso:destino==="finalizado"?100:destino==="producao"?p.progresso||1:p.progresso||0}:p));
     const res=await fetch("/api/plano-producao",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({...planoAtual,status_producao:destino,progresso:destino==="finalizado"?100:planoAtual.progresso||0})});
     const result=await res.json();
     if (!res.ok||!result.ok) { setPlanos(backup); setErro(apiError(result)); return; }
-
-    // Debita estoque ao finalizar
-    if (destino==="finalizado" && planoAtual.id_3mf) {
-      const rd=await fetch("/api/estoque-debito",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id_3mf:planoAtual.id_3mf})});
-      const dd=await rd.json();
-      if (!rd.ok||!dd.ok) setErro(`Aviso: pedido finalizado mas erro ao debitar estoque — ${dd.error}`);
-    }
   }
 
   async function confirmarFalha() {
@@ -362,6 +403,52 @@ export default function PlanoProducaoPage() {
     if (!falhaEmAndamento) return;
     setPlanos((prev)=>prev.map((p)=>p.id_pedido===falhaEmAndamento.idPedido?{...p,status_producao:falhaEmAndamento.statusAnterior}:p));
     setFalhaEmAndamento(null);
+  }
+
+  async function confirmarFinalizacao() {
+    if (!finalizacaoEmAndamento) return;
+    const snap = { ...finalizacaoEmAndamento };
+    setFinalizacaoEmAndamento((prev) => prev ? { ...prev, salvando: true } : null);
+    const planoAtual = planos.find((p) => p.id_pedido === snap.idPedido);
+    try {
+      // 1. Salva status finalizado no banco
+      const r1 = await fetch("/api/plano-producao", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...planoAtual, status_producao: "finalizado", progresso: 100 }),
+      });
+      const d1 = await r1.json();
+      if (!r1.ok || !d1.ok) throw new Error(d1.error || "Erro ao finalizar.");
+
+      // 2. Debita cada filamento no carretel/registro escolhido
+      for (const slot of snap.slots) {
+        if (!slot.idEstoqueEscolhido) continue;
+        // idEstoqueEscolhido = "id_filamento_localizacao" — usamos id_filamento + localizacao para identificar a linha
+        const [idFilStr, ...locParts] = slot.idEstoqueEscolhido.split("_");
+        const localizacao = locParts.join("_");
+        await fetch("/api/estoque-debito", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id_filamento: Number(idFilStr),
+            localizacao:  localizacao !== "0" ? localizacao : undefined,
+            gramas:       slot.gramas,
+          }),
+        });
+      }
+
+      setMensagem("Pedido finalizado e estoque debitado.");
+      setFinalizacaoEmAndamento(null);
+      await carregarDados(); // Refresh completo após finalizar
+    } catch (err) {
+      setPlanos((prev) => prev.map((p) => p.id_pedido === snap.idPedido ? { ...p, status_producao: snap.statusAnterior } : p));
+      setErro(err instanceof Error ? err.message : "Erro ao finalizar.");
+      setFinalizacaoEmAndamento(null);
+    }
+  }
+
+  function cancelarFinalizacao() {
+    if (!finalizacaoEmAndamento) return;
+    setPlanos((prev) => prev.map((p) => p.id_pedido === finalizacaoEmAndamento.idPedido ? { ...p, status_producao: finalizacaoEmAndamento.statusAnterior } : p));
+    setFinalizacaoEmAndamento(null);
   }
 
   // Atualiza progresso baseado nos STLs concluídos
@@ -543,6 +630,9 @@ export default function PlanoProducaoPage() {
                   onFalhaConfirm={confirmarFalha} onFalhaCancel={cancelarFalha}
                   onRegistrarFalhaStls={registrarFalhaStls}
                   onAtualizarProgresso={atualizarProgresso}
+                  finalizacaoEmAndamento={finalizacaoEmAndamento}
+                  onFinSlotChange={(idx,val)=>setFinalizacaoEmAndamento((prev)=>prev?{...prev,slots:prev.slots.map((s,j)=>j===idx?{...s,idEstoqueEscolhido:val}:s)}:null)}
+                  onFinConfirm={confirmarFinalizacao} onFinCancel={cancelarFinalizacao}
                   onEdit={editarPlano} onDelete={excluirPlano} />
               );
             })}
@@ -578,13 +668,16 @@ function Indicador({titulo,valor,subtitulo,vermelho=false}:{titulo:string;valor:
   );
 }
 
-function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,onEdit,onDelete}:{
+function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,onEdit,onDelete}:{
   coluna:{id:StatusProducao;titulo:string;subtitulo:string;bordaTopo:string};
   planos:PlanoProducao[]; nomes:Nomes; options:OptionsPayload|null; falhaEmAndamento:FalhaEmAndamento|null;
   onFalhaChange:(field:"gramasPerdido"|"tempoPerdido",value:string)=>void;
   onFalhaConfirm:()=>void; onFalhaCancel:()=>void;
   onRegistrarFalhaStls:(idPedido:number,stls:number[],gramas:string,tempo:string)=>void;
   onAtualizarProgresso:(idPedido:number,progresso:number)=>void;
+  finalizacaoEmAndamento:FinalizacaoEmAndamento|null;
+  onFinSlotChange:(idx:number,val:string)=>void;
+  onFinConfirm:()=>void; onFinCancel:()=>void;
   onEdit:(plano:PlanoProducao)=>void; onDelete:(idPedido:number)=>void;
 }) {
   const {setNodeRef,isOver}=useDroppable({id:coluna.id});
@@ -608,6 +701,8 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
               falhaEmAndamento={falhaEmAndamento?.idPedido===plano.id_pedido?falhaEmAndamento:null}
               onFalhaChange={onFalhaChange} onFalhaConfirm={onFalhaConfirm} onFalhaCancel={onFalhaCancel}
               onRegistrarFalhaStls={onRegistrarFalhaStls} onAtualizarProgresso={onAtualizarProgresso}
+              finalizacaoEmAndamento={finalizacaoEmAndamento?.idPedido===plano.id_pedido?finalizacaoEmAndamento:null}
+              onFinSlotChange={onFinSlotChange} onFinConfirm={onFinConfirm} onFinCancel={onFinCancel}
               onEdit={onEdit} onDelete={onDelete} />
           ))}
         </div>
@@ -616,12 +711,15 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
   );
 }
 
-function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,onEdit,onDelete}:{
+function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,onEdit,onDelete}:{
   plano:PlanoProducao; nomes:Nomes; options?:OptionsPayload|null; flutuando?:boolean; falhaEmAndamento?:FalhaEmAndamento|null;
   onFalhaChange?:(field:"gramasPerdido"|"tempoPerdido",value:string)=>void;
   onFalhaConfirm?:()=>void; onFalhaCancel?:()=>void;
   onRegistrarFalhaStls?:(idPedido:number,stls:number[],gramas:string,tempo:string)=>void;
   onAtualizarProgresso?:(idPedido:number,progresso:number)=>void;
+  finalizacaoEmAndamento?:FinalizacaoEmAndamento|null;
+  onFinSlotChange?:(idx:number,val:string)=>void;
+  onFinConfirm?:()=>void; onFinCancel?:()=>void;
   onEdit?:(plano:PlanoProducao)=>void; onDelete?:(idPedido:number)=>void;
 }) {
   const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useSortable({id:String(plano.id_pedido)});
@@ -630,6 +728,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
   const progresso=plano.progresso??0;
   const isFalha=plano.status_producao==="falha";
   const aguardaForm=!!falhaEmAndamento;
+  const aguardaFin=!!finalizacaoEmAndamento;
 
   // Card começa colapsado; expande ao clicar no chevron
   const [expandido,setExpandido]=useState(false);
@@ -649,7 +748,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
   };
 
   // Quando o modal de falha abre, força expansão para mostrar os campos
-  const deveExpandir = expandido || aguardaForm || flutuando;
+  const deveExpandir = expandido || aguardaForm || aguardaFin || flutuando;
 
   return (
     <article ref={setNodeRef} style={style}
@@ -846,6 +945,65 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
               </div>
             )}
           </div>
+
+          {/* ── Modal inline de finalização — seleção de carreteis ── */}
+          {aguardaFin&&finalizacaoEmAndamento&&(
+            <div className="mx-3 mb-3 rounded-xl border border-emerald-500/40 bg-black/40 p-3 space-y-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400"/>
+                <p className="text-xs font-black text-emerald-300">Selecione o carretel de cada filamento</p>
+              </div>
+              {finalizacaoEmAndamento.slots.map((slot, idx) => {
+                const estoqueDisp = (options?.estoque || [])
+                  .filter((e) => Number(e.id_filamento) === slot.idFilamento)
+                  .sort((a, b) => Number(b.qtd_estoque_gramas || 0) - Number(a.qtd_estoque_gramas || 0));
+                const key = `${slot.idFilamento}_${slot.gramas}_${idx}`;
+                return (
+                  <div key={key} className="space-y-1">
+                    <p className="text-[10px] font-bold text-slate-400">
+                      {slot.nomeFilamento} — <span className="text-cyan-300">{slot.gramas}g necessários</span>
+                    </p>
+                    <select
+                      value={slot.idEstoqueEscolhido}
+                      onChange={(e) => onFinSlotChange?.(idx, e.target.value)}
+                      className="w-full rounded-lg border border-white/10 bg-slate-950/80 px-2 py-1.5 text-xs text-white outline-none focus:border-emerald-400"
+                    >
+                      <option value="">Selecione o carretel</option>
+                      {estoqueDisp.map((est, j) => {
+                        const disponivel = Number(est.qtd_estoque_gramas || 0);
+                        const loc = est.localizacao ? ` | ${est.localizacao}` : "";
+                        const suficiente = disponivel >= slot.gramas;
+                        const estKey = `${est.id_filamento}_${est.localizacao ?? j}`;
+                        return (
+                          <option key={estKey} value={estKey}>
+                            {suficiente ? "✅" : "⚠️"} {disponivel}g disponível{loc}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    {slot.idEstoqueEscolhido && estoqueDisp.length > 0 && (()=>{
+                      const escolhido = estoqueDisp.find((e) => `${e.id_filamento}_${e.localizacao ?? "0"}` === slot.idEstoqueEscolhido || `${e.id_filamento}_${e.localizacao}` === slot.idEstoqueEscolhido);
+                      const disp = Number(escolhido?.qtd_estoque_gramas || 0);
+                      if (disp < slot.gramas) return <p className="text-[10px] text-amber-400">⚠️ Estoque insuficiente: {disp}g disponível, {slot.gramas}g necessário</p>;
+                      return null;
+                    })()}
+                  </div>
+                );
+              })}
+              <div className="flex gap-2 pt-1">
+                <button type="button"
+                  disabled={finalizacaoEmAndamento.salvando || finalizacaoEmAndamento.slots.some(s=>!s.idEstoqueEscolhido)}
+                  onClick={onFinConfirm}
+                  className="flex-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-black text-white hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed">
+                  {finalizacaoEmAndamento.salvando ? "Finalizando..." : "Confirmar e debitar estoque"}
+                </button>
+                <button type="button" onClick={onFinCancel} disabled={finalizacaoEmAndamento.salvando}
+                  className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/10">
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ── Modal inline de falha ── */}
           {aguardaForm&&falhaEmAndamento&&(
