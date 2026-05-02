@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   ActionButtons,
   Feedback,
@@ -11,7 +11,7 @@ import {
   useAuthGuard,
   useCrudList,
 } from "../_shared";
-import { Filter, X } from "lucide-react";
+import { ChevronDown, Filter, X } from "lucide-react";
 
 type Filamento = { id_filamento: number; nome_filamento: string; material_filamento: string | null; cor_filamento: string | null };
 type Carretel  = { id_carretel: number; marca_carretel: string; peso_carretel_g: number };
@@ -34,9 +34,7 @@ type RegistroCarretel = {
 const FIELD_CLASS =
   "w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none focus:border-cyan-400";
 
-// ── Componente FiltroColuna — select múltiplo nativo ────────────────────────
-// Sem estado interno. O pai controla tudo.
-// selecionados vazio = sem filtro = todos visíveis.
+// ── Componente FiltroColuna ─────────────────────────────────────────────────
 function FiltroColuna({
   label,
   opcoes,
@@ -48,37 +46,98 @@ function FiltroColuna({
   selecionados: string[];
   onChange: (novo: string[]) => void;
 }) {
-  const ativo = selecionados.length > 0 && selecionados.length < opcoes.length;
+  const [aberto,   setAberto]   = useState(false);
+  const [rascunho, setRascunho] = useState<string[]>([]);
+  const ref = useRef<HTMLDivElement>(null);
 
-  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const escolhidos = Array.from(e.target.selectedOptions).map((o) => o.value);
-    // Se todos selecionados = sem filtro
-    onChange(escolhidos.length === opcoes.length ? [] : escolhidos);
+  function abrir() {
+    setRascunho(selecionados.length === 0 ? [...opcoes] : [...selecionados]);
+    setAberto(true);
   }
 
+  function fechar() { setAberto(false); }
+
+  function aplicar() {
+    onChange(rascunho.length === opcoes.length ? [] : [...rascunho]);
+    fechar();
+  }
+
+  function toggle(valor: string) {
+    setRascunho((prev) => {
+      if (prev.length === opcoes.length) return [valor]; // isola
+      const jaEsta = prev.includes(valor);
+      const novo = jaEsta ? prev.filter((v) => v !== valor) : [...prev, valor];
+      return novo.length === opcoes.length ? [...opcoes] : novo;
+    });
+  }
+
+  useEffect(() => {
+    if (!aberto) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) fechar();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [aberto]);
+
+  const ativo = selecionados.length > 0 && selecionados.length < opcoes.length;
+
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center justify-between gap-1">
-        <span className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider ${ativo ? "text-cyan-300" : "text-slate-500"}`}>
-          {ativo && <Filter className="h-2.5 w-2.5" />}
-          {label}
-          {ativo && <span className="rounded-full bg-cyan-400 px-1 text-[9px] text-slate-950">{selecionados.length}</span>}
-        </span>
-        {ativo && (
-          <button onClick={() => onChange([])} className="text-[9px] text-slate-500 hover:text-red-400">✕</button>
-        )}
-      </div>
-      <select
-        multiple
-        size={Math.min(opcoes.length, 4)}
-        value={selecionados.length === 0 ? opcoes : selecionados}
-        onChange={handleChange}
-        className="w-full rounded-lg border border-white/10 bg-slate-950/80 text-xs text-slate-200 outline-none focus:border-cyan-400 [&>option]:px-2 [&>option]:py-0.5 [&>option:checked]:bg-cyan-400/20 [&>option:checked]:text-cyan-200"
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={aberto ? aplicar : abrir}
+        className={`flex w-full items-center justify-between gap-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-colors ${
+          ativo
+            ? "border border-cyan-400/50 bg-cyan-400/10 text-cyan-300"
+            : "border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200"
+        }`}
       >
-        {opcoes.map((o) => (
-          <option key={o} value={o}>{o || "(vazio)"}</option>
-        ))}
-      </select>
+        <span className="flex items-center gap-1 truncate">
+          {ativo && <Filter className="h-3 w-3 shrink-0" />}
+          {label}
+          {ativo && (
+            <span className="ml-1 rounded-full bg-cyan-400 px-1.5 text-[10px] font-black text-slate-950">
+              {selecionados.length}
+            </span>
+          )}
+        </span>
+        <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${aberto ? "rotate-180" : ""}`} />
+      </button>
+
+      {aberto && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-52 rounded-2xl border border-white/15 bg-slate-900 shadow-2xl shadow-black/50">
+          <div className="flex gap-1 border-b border-white/10 px-2 py-1.5">
+            <button type="button" onClick={() => setRascunho([...opcoes])}
+              className="flex-1 rounded-lg bg-white/5 px-2 py-1 text-xs font-bold text-slate-300 hover:bg-white/10">
+              Todos
+            </button>
+            <button type="button" onClick={() => setRascunho([])}
+              className="flex-1 rounded-lg bg-white/5 px-2 py-1 text-xs font-bold text-slate-300 hover:bg-white/10">
+              Nenhum
+            </button>
+            <button type="button" onClick={aplicar}
+              className="flex-1 rounded-lg bg-cyan-400/20 px-2 py-1 text-xs font-black text-cyan-300 hover:bg-cyan-400/30">
+              OK
+            </button>
+          </div>
+          <ul className="max-h-48 overflow-y-auto p-1">
+            {opcoes.map((opcao) => (
+              <li key={opcao}>
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-200 hover:bg-white/10">
+                  <input
+                    type="checkbox"
+                    checked={rascunho.includes(opcao)}
+                    onChange={() => toggle(opcao)}
+                    className="h-3.5 w-3.5 accent-cyan-400"
+                  />
+                  <span className="truncate">{opcao || "(vazio)"}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
