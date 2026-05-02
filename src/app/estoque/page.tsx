@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   ActionButtons,
   Feedback,
@@ -189,7 +189,7 @@ export default function Page() {
   const [salvando,    setSalvando]    = useState(false);
   const [mensagem,    setMensagem]    = useState("");
 
-  // Filtros Excel — array vazio = todos visíveis (array detectado por useMemo via join)
+  // Filtros Excel — array vazio = todos visíveis
   const [filtroNome,     setFiltroNome]     = useState<string[]>([]);
   const [filtroCor,      setFiltroCor]      = useState<string[]>([]);
   const [filtroLocal,    setFiltroLocal]    = useState<string[]>([]);
@@ -229,72 +229,49 @@ export default function Page() {
       : null;
 
   // Dados enriquecidos para filtros e exibição
-  const estoqueEnriquecido = useMemo(() =>
-    estoque.map((row) => {
-      const fil    = filamentos.find((f) => f.id_filamento === row.id_filamento);
-      const tara   = row.carretel?.peso_carretel_g ?? null;
-      const bruto  = row.peso_com_carretel_g ?? null;
-      const liquido =
-        bruto !== null && tara !== null
-          ? Math.max(0, Number((bruto - tara).toFixed(1)))
-          : (row.qtd_estoque_gramas ?? null);
-      return {
-        row,
-        nome:     fil?.nome_filamento      ?? "-",
-        cor:      fil?.cor_filamento       ?? "-",
-        local:    row.localizacao          ?? "-",
-        carretel: row.carretel?.marca_carretel ?? "-",
-        tara,
-        bruto,
-        liquido,
-      };
-    }),
-  [estoque, filamentos]);
+  // Cálculo direto no render — sem cache, sem problema de referência
+  // Executado toda vez que o componente re-renderiza (filtros, dados, etc)
+  const nomeSet     = new Set(filtroNome);
+  const corSet      = new Set(filtroCor);
+  const localSet    = new Set(filtroLocal);
+  const carretelSet = new Set(filtroCarretel);
+  const valorNum    = filtroLiquidoValor !== "" ? Number(filtroLiquidoValor) : null;
 
-  // Opções únicas para cada coluna (SELECT DISTINCT)
-  const opcoesNome     = useMemo(() => [...new Set(estoqueEnriquecido.map((r) => r.nome))].sort(),     [estoqueEnriquecido]);
-  const opcoesCor      = useMemo(() => [...new Set(estoqueEnriquecido.map((r) => r.cor))].sort(),      [estoqueEnriquecido]);
-  const opcoesLocal    = useMemo(() => [...new Set(estoqueEnriquecido.map((r) => r.local))].sort(),    [estoqueEnriquecido]);
-  const opcoesCarretel = useMemo(() => [...new Set(estoqueEnriquecido.map((r) => r.carretel))].sort(), [estoqueEnriquecido]);
+  const todasAsLinhas = estoque.map((row) => {
+    const fil    = filamentos.find((f) => f.id_filamento === row.id_filamento);
+    const tara   = row.carretel?.peso_carretel_g ?? null;
+    const bruto  = row.peso_com_carretel_g ?? null;
+    const liquido = bruto !== null && tara !== null
+      ? Math.max(0, Number((bruto - tara).toFixed(1)))
+      : (row.qtd_estoque_gramas ?? null);
+    return {
+      row,
+      nome:     fil?.nome_filamento          ?? "-",
+      cor:      fil?.cor_filamento           ?? "-",
+      local:    row.localizacao              ?? "-",
+      carretel: row.carretel?.marca_carretel ?? "-",
+      tara, bruto, liquido,
+    };
+  });
 
-  // Filtragem: Set vazio = tudo passa
-  // Filtragem imperativa — executada sempre que qualquer filtro ou dado muda
-  function calcularFiltrado(
-    dados: typeof estoqueEnriquecido,
-    nome: string[], cor: string[], local: string[], carretel: string[],
-    liquidoOp: string, liquidoValor: string
-  ) {
-    const nomeSet     = new Set(nome);
-    const corSet      = new Set(cor);
-    const localSet    = new Set(local);
-    const carretelSet = new Set(carretel);
-    const valorNum    = liquidoValor !== "" ? Number(liquidoValor) : null;
-    return dados.filter((r) => {
-      const passaTexto =
-        (nomeSet.size     === 0 || nomeSet.has(r.nome))      &&
-        (corSet.size      === 0 || corSet.has(r.cor))        &&
-        (localSet.size    === 0 || localSet.has(r.local))    &&
-        (carretelSet.size === 0 || carretelSet.has(r.carretel));
-      if (!passaTexto) return false;
-      if (liquidoOp === "" || valorNum === null || r.liquido === null) return true;
-      if (liquidoOp === ">") return r.liquido >  valorNum;
-      if (liquidoOp === "<") return r.liquido <  valorNum;
-      if (liquidoOp === "=") return r.liquido === valorNum;
-      return true;
-    });
-  }
+  const estoqueFiltrado = todasAsLinhas.filter((r) => {
+    const passaTexto =
+      (nomeSet.size     === 0 || nomeSet.has(r.nome))      &&
+      (corSet.size      === 0 || corSet.has(r.cor))        &&
+      (localSet.size    === 0 || localSet.has(r.local))    &&
+      (carretelSet.size === 0 || carretelSet.has(r.carretel));
+    if (!passaTexto) return false;
+    if (filtroLiquidoOp === "" || valorNum === null || r.liquido === null) return true;
+    if (filtroLiquidoOp === ">") return r.liquido >  valorNum;
+    if (filtroLiquidoOp === "<") return r.liquido <  valorNum;
+    if (filtroLiquidoOp === "=") return r.liquido === valorNum;
+    return true;
+  });
 
-  const [estoqueFiltrado, setEstoqueFiltrado] = useState<typeof estoqueEnriquecido>([]);
-
-  // JSON.stringify nas deps garante comparação por valor, não por referência
-  const depsKey = JSON.stringify([filtroNome, filtroCor, filtroLocal, filtroCarretel, filtroLiquidoOp, filtroLiquidoValor]);
-
-  useEffect(() => {
-    setEstoqueFiltrado(
-      calcularFiltrado(estoqueEnriquecido, filtroNome, filtroCor, filtroLocal, filtroCarretel, filtroLiquidoOp, filtroLiquidoValor)
-    );
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [estoqueEnriquecido, depsKey]);
+  const opcoesNome     = [...new Set(todasAsLinhas.map((r) => r.nome))].sort();
+  const opcoesCor      = [...new Set(todasAsLinhas.map((r) => r.cor))].sort();
+  const opcoesLocal    = [...new Set(todasAsLinhas.map((r) => r.local))].sort();
+  const opcoesCarretel = [...new Set(todasAsLinhas.map((r) => r.carretel))].sort();
 
   const algumFiltroAtivo =
     filtroNome.length > 0 || filtroCor.length > 0 || filtroLocal.length > 0 || filtroCarretel.length > 0 ||
