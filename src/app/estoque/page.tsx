@@ -258,34 +258,43 @@ export default function Page() {
   const opcoesCarretel = useMemo(() => [...new Set(estoqueEnriquecido.map((r) => r.carretel))].sort(), [estoqueEnriquecido]);
 
   // Filtragem: Set vazio = tudo passa
-  // Chaves primitivas derivadas dos arrays — useMemo detecta mudança por valor
-  const keyNome     = filtroNome.join("|");
-  const keyCor      = filtroCor.join("|");
-  const keyLocal    = filtroLocal.join("|");
-  const keyCarretel = filtroCarretel.join("|");
-
-  const estoqueFiltrado = useMemo(() => {
-    const nomeSet     = new Set(filtroNome);
-    const corSet      = new Set(filtroCor);
-    const localSet    = new Set(filtroLocal);
-    const carretelSet = new Set(filtroCarretel);
-    const valorNum    = filtroLiquidoValor !== "" ? Number(filtroLiquidoValor) : null;
-
-    return estoqueEnriquecido.filter((r) => {
+  // Filtragem imperativa — executada sempre que qualquer filtro ou dado muda
+  function calcularFiltrado(
+    dados: typeof estoqueEnriquecido,
+    nome: string[], cor: string[], local: string[], carretel: string[],
+    liquidoOp: string, liquidoValor: string
+  ) {
+    const nomeSet     = new Set(nome);
+    const corSet      = new Set(cor);
+    const localSet    = new Set(local);
+    const carretelSet = new Set(carretel);
+    const valorNum    = liquidoValor !== "" ? Number(liquidoValor) : null;
+    return dados.filter((r) => {
       const passaTexto =
         (nomeSet.size     === 0 || nomeSet.has(r.nome))      &&
         (corSet.size      === 0 || corSet.has(r.cor))        &&
         (localSet.size    === 0 || localSet.has(r.local))    &&
         (carretelSet.size === 0 || carretelSet.has(r.carretel));
       if (!passaTexto) return false;
-      if (filtroLiquidoOp === "" || valorNum === null || r.liquido === null) return true;
-      if (filtroLiquidoOp === ">") return r.liquido >  valorNum;
-      if (filtroLiquidoOp === "<") return r.liquido <  valorNum;
-      if (filtroLiquidoOp === "=") return r.liquido === valorNum;
+      if (liquidoOp === "" || valorNum === null || r.liquido === null) return true;
+      if (liquidoOp === ">") return r.liquido >  valorNum;
+      if (liquidoOp === "<") return r.liquido <  valorNum;
+      if (liquidoOp === "=") return r.liquido === valorNum;
       return true;
     });
-  // deps são strings primitivas — React compara por valor corretamente
-  }, [estoqueEnriquecido, keyNome, keyCor, keyLocal, keyCarretel, filtroLiquidoOp, filtroLiquidoValor]);
+  }
+
+  const [estoqueFiltrado, setEstoqueFiltrado] = useState<typeof estoqueEnriquecido>([]);
+
+  // JSON.stringify nas deps garante comparação por valor, não por referência
+  const depsKey = JSON.stringify([filtroNome, filtroCor, filtroLocal, filtroCarretel, filtroLiquidoOp, filtroLiquidoValor]);
+
+  useEffect(() => {
+    setEstoqueFiltrado(
+      calcularFiltrado(estoqueEnriquecido, filtroNome, filtroCor, filtroLocal, filtroCarretel, filtroLiquidoOp, filtroLiquidoValor)
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estoqueEnriquecido, depsKey]);
 
   const algumFiltroAtivo =
     filtroNome.length > 0 || filtroCor.length > 0 || filtroLocal.length > 0 || filtroCarretel.length > 0 ||
