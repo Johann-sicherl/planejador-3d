@@ -275,23 +275,80 @@ export default function Page() {
             >
               <p className="mb-3 text-sm font-black text-cyan-300">Filamento {campo.idx}</p>
 
-              <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-slate-400">
-                  Nome • Material • Fabricante • Cor
-                </span>
-                <select
-                  value={campo.idFilamento}
-                  onChange={(e) => campo.setIdFilamento(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-white outline-none focus:border-cyan-400"
-                >
-                  <option value="">Selecione</option>
-                  {filamentosDisponiveis.map((item) => (
-                    <option key={String(item.id_filamento)} value={String(item.id_filamento)}>
-                      {montarLabelFilamento(item)}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {/* Cascata: Nome → Material → Cor */}
+              {(() => {
+                const slotIdx = campo.idx - 1;
+                const nomeSel = nomes_sel[slotIdx] || (campo.idFilamento ? String(filamentoPorId.get(campo.idFilamento)?.nome_filamento ?? "") : "");
+                const matSel  = mats_sel[slotIdx]  || (campo.idFilamento ? String(filamentoPorId.get(campo.idFilamento)?.material_filamento ?? "") : "");
+
+                // 1. Nomes únicos disponíveis
+                const nomes = [...new Set(filamentosDisponiveis.map((f) => String(f.nome_filamento ?? "")))].filter(Boolean).sort();
+
+                // 2. Materiais filtrados pelo nome selecionado
+                const materiais = nomeSel
+                  ? [...new Set(filamentosDisponiveis.filter((f) => String(f.nome_filamento ?? "") === nomeSel).map((f) => String(f.material_filamento ?? "")))].filter(Boolean).sort()
+                  : [];
+
+                // 3. Cores filtradas pelo nome + material selecionados
+                const cores = nomeSel && matSel
+                  ? filamentosDisponiveis.filter((f) => String(f.nome_filamento ?? "") === nomeSel && String(f.material_filamento ?? "") === matSel)
+                  : [];
+
+                return (
+                  <div className="space-y-2">
+                    {/* Seleção 1: Nome */}
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-semibold text-slate-400">Nome do filamento</span>
+                      <select
+                        value={nomeSel}
+                        onChange={(e) => setNomeSel(campo.idx - 1, e.target.value)}
+                        className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-white outline-none focus:border-cyan-400"
+                      >
+                        <option value="">Selecione o nome</option>
+                        {nomes.map((n) => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    {/* Seleção 2: Material (só aparece se nome escolhido) */}
+                    {nomeSel && (
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-semibold text-slate-400">Material</span>
+                        <select
+                          value={matSel}
+                          onChange={(e) => setMatSel(campo.idx - 1, e.target.value)}
+                          className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-white outline-none focus:border-cyan-400"
+                        >
+                          <option value="">Selecione o material</option>
+                          {materiais.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+
+                    {/* Seleção 3: Cor (só aparece se nome + material escolhidos) */}
+                    {nomeSel && matSel && (
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-semibold text-slate-400">Cor</span>
+                        <select
+                          value={campo.idFilamento}
+                          onChange={(e) => campo.setIdFilamento(e.target.value)}
+                          className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-white outline-none focus:border-cyan-400"
+                        >
+                          <option value="">Selecione a cor</option>
+                          {cores.map((item) => (
+                            <option key={String(item.id_filamento)} value={String(item.id_filamento)}>
+                              {String(item.cor_filamento ?? item.cor ?? "Sem cor")}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                  </div>
+                );
+              })()}
 
               <label className="mt-3 block">
                 <span className="mb-1 block text-xs font-semibold text-slate-400">Gramas</span>
