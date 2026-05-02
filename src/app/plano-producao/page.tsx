@@ -316,7 +316,7 @@ export default function PlanoProducaoPage() {
             nomeFilamento: `${nomeFil}${cor}`,
             nomeStl,
             gramas: gramas * Number(linha.qtd_componente || 1),
-            idEstoqueEscolhido: estoqueDisp.length > 0 ? String(estoqueDisp[0].id_filamento) + "_" + String(estoqueDisp[0].localizacao ?? "0") : "",
+            idEstoqueEscolhido: "", // usuario deve escolher explicitamente
           });
         }
       }
@@ -427,13 +427,18 @@ export default function PlanoProducaoPage() {
       for (const slot of snap.slots) {
         if (!slot.idEstoqueEscolhido) continue;
         // idEstoqueEscolhido = "id_filamento_localizacao" — usamos id_filamento + localizacao para identificar a linha
-        const [idFilStr, ...locParts] = slot.idEstoqueEscolhido.split("_");
-        const localizacao = locParts.join("_");
+        // key format: "idFilamento_localizacao_index"
+        const parts = slot.idEstoqueEscolhido.split("_");
+        const idFilStr = parts[0];
+        const localizacao = parts.slice(1, -1).join("_"); // remove first and last
+        // Extrai o índice j do final da key para identificar o carretel exato
+        const idx = Number(parts[parts.length - 1]);
         await fetch("/api/estoque-debito", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             id_filamento: Number(idFilStr),
-            localizacao:  localizacao !== "0" ? localizacao : undefined,
+            localizacao:  localizacao || undefined,
+            idx:          Number.isNaN(idx) ? 0 : idx,
             gramas:       slot.gramas,
           }),
         });
@@ -980,7 +985,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                         const disponivel = Number(est.qtd_estoque_gramas || 0);
                         const loc = est.localizacao ? ` | ${est.localizacao}` : "";
                         const suficiente = disponivel >= slot.gramas;
-                        const estKey = `${est.id_filamento}_${est.localizacao ?? j}`;
+                        const estKey = `${est.id_filamento}_${est.localizacao ?? ""}_${j}`;
                         const selecionado = slot.idEstoqueEscolhido === estKey;
                         return (
                           <button
