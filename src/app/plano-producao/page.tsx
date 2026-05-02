@@ -495,6 +495,7 @@ export default function PlanoProducaoPage() {
               const planosDaColuna=planos.filter((p)=>(p.status_producao||"pedidos")===coluna.id);
               return (
                 <ColunaProducao key={coluna.id} coluna={coluna} planos={planosDaColuna} nomes={nomes}
+                  options={options}
                   falhaEmAndamento={falhaEmAndamento}
                   onFalhaChange={(field,value)=>setFalhaEmAndamento((prev)=>prev?{...prev,[field]:value}:null)}
                   onFalhaConfirm={confirmarFalha} onFalhaCancel={cancelarFalha}
@@ -533,9 +534,9 @@ function Indicador({titulo,valor,subtitulo,vermelho=false}:{titulo:string;valor:
   );
 }
 
-function ColunaProducao({coluna,planos,nomes,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onEdit,onDelete}:{
+function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onEdit,onDelete}:{
   coluna:{id:StatusProducao;titulo:string;subtitulo:string;bordaTopo:string};
-  planos:PlanoProducao[]; nomes:Nomes; falhaEmAndamento:FalhaEmAndamento|null;
+  planos:PlanoProducao[]; nomes:Nomes; options:OptionsPayload|null; falhaEmAndamento:FalhaEmAndamento|null;
   onFalhaChange:(field:"gramasPerdido"|"tempoPerdido",value:string)=>void;
   onFalhaConfirm:()=>void; onFalhaCancel:()=>void;
   onEdit:(plano:PlanoProducao)=>void; onDelete:(idPedido:number)=>void;
@@ -557,7 +558,7 @@ function ColunaProducao({coluna,planos,nomes,falhaEmAndamento,onFalhaChange,onFa
       <SortableContext items={planos.map((p)=>String(p.id_pedido))} strategy={verticalListSortingStrategy}>
         <div className="max-h-[calc(100vh-360px)] space-y-4 overflow-y-auto pr-1">
           {planos.map((plano)=>(
-            <CardPlano key={plano.id_pedido} plano={plano} nomes={nomes}
+            <CardPlano key={plano.id_pedido} plano={plano} nomes={nomes} options={options}
               falhaEmAndamento={falhaEmAndamento?.idPedido===plano.id_pedido?falhaEmAndamento:null}
               onFalhaChange={onFalhaChange} onFalhaConfirm={onFalhaConfirm} onFalhaCancel={onFalhaCancel}
               onEdit={onEdit} onDelete={onDelete} />
@@ -568,8 +569,8 @@ function ColunaProducao({coluna,planos,nomes,falhaEmAndamento,onFalhaChange,onFa
   );
 }
 
-function CardPlano({plano,nomes,flutuando=false,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onEdit,onDelete}:{
-  plano:PlanoProducao; nomes:Nomes; flutuando?:boolean; falhaEmAndamento?:FalhaEmAndamento|null;
+function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onEdit,onDelete}:{
+  plano:PlanoProducao; nomes:Nomes; options?:OptionsPayload|null; flutuando?:boolean; falhaEmAndamento?:FalhaEmAndamento|null;
   onFalhaChange?:(field:"gramasPerdido"|"tempoPerdido",value:string)=>void;
   onFalhaConfirm?:()=>void; onFalhaCancel?:()=>void;
   onEdit?:(plano:PlanoProducao)=>void; onDelete?:(idPedido:number)=>void;
@@ -685,6 +686,25 @@ function CardPlano({plano,nomes,flutuando=false,falhaEmAndamento,onFalhaChange,o
                 <Clock className="h-3.5 w-3.5 shrink-0 text-cyan-300"/>
                 <span>{formatTempo(plano.tempo_impressao_min)}</span>
               </div>
+              {/* STLs do 3MF */}
+              {plano.id_3mf&&options&&(()=>{
+                const linhas=(options.arquivos3mf||[]).filter((a)=>Number(a.id_3mf)===Number(plano.id_3mf));
+                if(!linhas.length) return null;
+                return (
+                  <div className="mt-1.5 border-t border-white/10 pt-1.5 space-y-1">
+                    {linhas.map((a,i)=>{
+                      const comp=(options.componentes||[]).find((c)=>Number(c.id_componente_stl)===Number(a.id_componente_stl));
+                      const nome=comp?String(comp.nome_componente??comp.nome_stl??a.id_componente_stl):String(a.id_componente_stl);
+                      return (
+                        <div key={i} className="flex items-center justify-between gap-2">
+                          <span className="truncate text-slate-400">{nome}</span>
+                          <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-slate-300">x{String(a.qtd_componente??1)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Barra de progresso completa */}
