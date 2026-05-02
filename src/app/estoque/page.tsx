@@ -64,26 +64,41 @@ function FiltroColuna({
     o.toLowerCase().includes(busca.toLowerCase())
   );
 
+  // Ao abrir: se Set vazio (sem filtro), inicializa com TODOS marcados
+  // para que o usuário veja tudo marcado e possa desmarcar o que não quer
+  function handleAbrir() {
+    if (!aberto && selecionados.size === 0 && opcoes.length > 0) {
+      onChange(new Set(opcoes));
+    }
+    setAberto((v) => !v);
+  }
+
   function toggleItem(valor: string) {
     const novo = new Set(selecionados);
     if (novo.has(valor)) novo.delete(valor);
     else novo.add(valor);
-    onChange(novo);
+    // Se ficou igual a todos, volta para Set vazio (sem filtro ativo)
+    if (novo.size === opcoes.length) onChange(new Set());
+    else onChange(novo);
   }
 
   function selecionarTodos() {
-    onChange(new Set(opcoes));
+    onChange(new Set()); // Set vazio = todos visíveis
+    setBusca("");
   }
 
   function limpar() {
+    // Desmarca tudo = filtra para mostrar nada (Set com string impossível)
+    // Na prática não faz sentido "mostrar nada", então limpar = mostrar tudo
     onChange(new Set());
     setBusca("");
+    setAberto(false);
   }
 
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setAberto((v) => !v)}
+        onClick={handleAbrir}
         className={`flex w-full items-center justify-between gap-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-colors ${
           ativo
             ? "border border-cyan-400/50 bg-cyan-400/10 text-cyan-300"
@@ -176,6 +191,11 @@ export default function Page() {
   const [filtroLocal,    setFiltroLocal]    = useState<Set<string>>(new Set());
   const [filtroCarretel, setFiltroCarretel] = useState<Set<string>>(new Set());
 
+  // Filtro numérico de filamento líquido
+  type OperadorLiquido = ">" | "<" | "=" | "";
+  const [filtroLiquidoOp,    setFiltroLiquidoOp]    = useState<OperadorLiquido>("");
+  const [filtroLiquidoValor, setFiltroLiquidoValor] = useState("");
+
   // Estoque form
   const [editingEstoqueId, setEditingEstoqueId] = useState<string | null>(null);
   const [idFilamento,      setIdFilamento]       = useState("");
@@ -234,21 +254,31 @@ export default function Page() {
   const opcoesCarretel = useMemo(() => [...new Set(estoqueEnriquecido.map((r) => r.carretel))].sort(), [estoqueEnriquecido]);
 
   // Filtragem: Set vazio = tudo passa
-  const estoqueFiltrado = useMemo(() =>
-    estoqueEnriquecido.filter((r) =>
-      (filtroNome.size     === 0 || filtroNome.has(r.nome))      &&
-      (filtroCor.size      === 0 || filtroCor.has(r.cor))        &&
-      (filtroLocal.size    === 0 || filtroLocal.has(r.local))    &&
-      (filtroCarretel.size === 0 || filtroCarretel.has(r.carretel))
-    ),
-  [estoqueEnriquecido, filtroNome, filtroCor, filtroLocal, filtroCarretel]);
+  const estoqueFiltrado = useMemo(() => {
+    const valorNum = filtroLiquidoValor !== "" ? Number(filtroLiquidoValor) : null;
+    return estoqueEnriquecido.filter((r) => {
+      const passaTexto =
+        (filtroNome.size     === 0 || filtroNome.has(r.nome))      &&
+        (filtroCor.size      === 0 || filtroCor.has(r.cor))        &&
+        (filtroLocal.size    === 0 || filtroLocal.has(r.local))    &&
+        (filtroCarretel.size === 0 || filtroCarretel.has(r.carretel));
+      if (!passaTexto) return false;
+      if (filtroLiquidoOp === "" || valorNum === null || r.liquido === null) return true;
+      if (filtroLiquidoOp === ">") return r.liquido >  valorNum;
+      if (filtroLiquidoOp === "<") return r.liquido <  valorNum;
+      if (filtroLiquidoOp === "=") return r.liquido === valorNum;
+      return true;
+    });
+  }, [estoqueEnriquecido, filtroNome, filtroCor, filtroLocal, filtroCarretel, filtroLiquidoOp, filtroLiquidoValor]);
 
   const algumFiltroAtivo =
-    filtroNome.size > 0 || filtroCor.size > 0 || filtroLocal.size > 0 || filtroCarretel.size > 0;
+    filtroNome.size > 0 || filtroCor.size > 0 || filtroLocal.size > 0 || filtroCarretel.size > 0 ||
+    (filtroLiquidoOp !== "" && filtroLiquidoValor !== "");
 
   function limparTodosFiltros() {
     setFiltroNome(new Set()); setFiltroCor(new Set());
     setFiltroLocal(new Set()); setFiltroCarretel(new Set());
+    setFiltroLiquidoOp(""); setFiltroLiquidoValor("");
   }
 
   // Estoque CRUD
@@ -515,7 +545,22 @@ export default function Page() {
                   </th>
                   <th className="px-2 pb-3" />
                   <th className="px-2 pb-3" />
-                  <th className="px-2 pb-3" />
+                  <th className="px-2 pb-3">
+                    <div className="flex gap-1">
+                      <select value={filtroLiquidoOp} onChange={(e) => setFiltroLiquidoOp(e.target.value as OperadorLiquido)}
+                        className="w-12 rounded-lg border border-white/10 bg-slate-950/60 px-1 py-1.5 text-xs text-slate-200 outline-none focus:border-cyan-400">
+                        <option value="">--</option>
+                        <option value=">">{">"}</option>
+                        <option value="<">{"<"}</option>
+                        <option value="=">{"="}</option>
+                      </select>
+                      <input type="number" value={filtroLiquidoValor}
+                        onChange={(e) => setFiltroLiquidoValor(e.target.value)}
+                        placeholder="g"
+                        disabled={filtroLiquidoOp === ""}
+                        className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-cyan-400 placeholder:text-slate-600 disabled:opacity-30" />
+                    </div>
+                  </th>
                   <th className="px-2 pb-3" />
                 </tr>
               </thead>
