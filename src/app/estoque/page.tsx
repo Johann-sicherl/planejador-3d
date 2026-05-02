@@ -45,8 +45,8 @@ function FiltroColuna({
 }: {
   label: string;
   opcoes: string[];
-  selecionados: Set<string>;
-  onChange: (novo: Set<string>) => void;
+  selecionados: string[];
+  onChange: (novo: string[]) => void;
 }) {
   const [aberto, setAberto] = useState(false);
   const [busca,  setBusca]  = useState("");
@@ -63,9 +63,9 @@ function FiltroColuna({
 
   // Aplica o filtro (sobe para o pai)
   function aplicar(conjunto: Set<string>) {
-    // Se tudo marcado = sem filtro ativo = Set vazio para o pai
+    // Se tudo marcado = sem filtro ativo = array vazio para o pai
     const todosMarcados = conjunto.size === opcoes.length;
-    onChange(todosMarcados ? new Set() : new Set(conjunto));
+    onChange(todosMarcados ? [] : [...conjunto]);
     setAberto(false);
     setBusca("");
   }
@@ -84,7 +84,7 @@ function FiltroColuna({
 
   function abrirDropdown() {
     // Ao abrir: sincroniza local com estado atual do pai
-    if (selecionados.size === 0) setLocal(new Set(opcoes));
+    if (selecionados.length === 0) setLocal(new Set(opcoes));
     else setLocal(new Set(selecionados));
     setAberto(true);
   }
@@ -102,7 +102,7 @@ function FiltroColuna({
     o.toLowerCase().includes(busca.toLowerCase())
   );
 
-  const ativo = selecionados.size > 0 && selecionados.size < opcoes.length;
+  const ativo = selecionados.length > 0 && selecionados.length < opcoes.length;
 
   return (
     <div ref={ref} className="relative">
@@ -117,7 +117,7 @@ function FiltroColuna({
         <span className="flex items-center gap-1 truncate">
           {ativo && <Filter className="h-3 w-3 shrink-0" />}
           {label}
-          {ativo && <span className="ml-1 rounded-full bg-cyan-400 px-1.5 text-[10px] text-slate-950">{selecionados.size}</span>}
+          {ativo && <span className="ml-1 rounded-full bg-cyan-400 px-1.5 text-[10px] text-slate-950">{selecionados.length}</span>}
         </span>
         <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${aberto ? "rotate-180" : ""}`} />
       </button>
@@ -189,11 +189,11 @@ export default function Page() {
   const [salvando,    setSalvando]    = useState(false);
   const [mensagem,    setMensagem]    = useState("");
 
-  // Filtros Excel — Set vazio = todos visíveis
-  const [filtroNome,     setFiltroNome]     = useState<Set<string>>(new Set());
-  const [filtroCor,      setFiltroCor]      = useState<Set<string>>(new Set());
-  const [filtroLocal,    setFiltroLocal]    = useState<Set<string>>(new Set());
-  const [filtroCarretel, setFiltroCarretel] = useState<Set<string>>(new Set());
+  // Filtros Excel — array vazio = todos visíveis (array detectado por useMemo via join)
+  const [filtroNome,     setFiltroNome]     = useState<string[]>([]);
+  const [filtroCor,      setFiltroCor]      = useState<string[]>([]);
+  const [filtroLocal,    setFiltroLocal]    = useState<string[]>([]);
+  const [filtroCarretel, setFiltroCarretel] = useState<string[]>([]);
 
   // Filtro numérico de filamento líquido
   type OperadorLiquido = ">" | "<" | "=" | "";
@@ -262,10 +262,10 @@ export default function Page() {
     const valorNum = filtroLiquidoValor !== "" ? Number(filtroLiquidoValor) : null;
     return estoqueEnriquecido.filter((r) => {
       const passaTexto =
-        (filtroNome.size     === 0 || filtroNome.has(r.nome))      &&
-        (filtroCor.size      === 0 || filtroCor.has(r.cor))        &&
-        (filtroLocal.size    === 0 || filtroLocal.has(r.local))    &&
-        (filtroCarretel.size === 0 || filtroCarretel.has(r.carretel));
+        (filtroNome.length     === 0 || filtroNome.includes(r.nome))      &&
+        (filtroCor.length      === 0 || filtroCor.includes(r.cor))        &&
+        (filtroLocal.length    === 0 || filtroLocal.includes(r.local))    &&
+        (filtroCarretel.length === 0 || filtroCarretel.includes(r.carretel));
       if (!passaTexto) return false;
       if (filtroLiquidoOp === "" || valorNum === null || r.liquido === null) return true;
       if (filtroLiquidoOp === ">") return r.liquido >  valorNum;
@@ -273,15 +273,16 @@ export default function Page() {
       if (filtroLiquidoOp === "=") return r.liquido === valorNum;
       return true;
     });
-  }, [estoqueEnriquecido, filtroNome, filtroCor, filtroLocal, filtroCarretel, filtroLiquidoOp, filtroLiquidoValor]);
+  // join() converte arrays em strings — useMemo detecta mudança corretamente
+  }, [estoqueEnriquecido, filtroNome.join(), filtroCor.join(), filtroLocal.join(), filtroCarretel.join(), filtroLiquidoOp, filtroLiquidoValor]);
 
   const algumFiltroAtivo =
-    filtroNome.size > 0 || filtroCor.size > 0 || filtroLocal.size > 0 || filtroCarretel.size > 0 ||
+    filtroNome.length > 0 || filtroCor.length > 0 || filtroLocal.length > 0 || filtroCarretel.length > 0 ||
     (filtroLiquidoOp !== "" && filtroLiquidoValor !== "");
 
   function limparTodosFiltros() {
-    setFiltroNome(new Set()); setFiltroCor(new Set());
-    setFiltroLocal(new Set()); setFiltroCarretel(new Set());
+    setFiltroNome([]); setFiltroCor([]);
+    setFiltroLocal([]); setFiltroCarretel([]);
     setFiltroLiquidoOp(""); setFiltroLiquidoValor("");
   }
 
@@ -533,19 +534,19 @@ export default function Page() {
                 <tr>
                   <th className="px-2 pb-3">
                     <FiltroColuna label="Filamento" opcoes={opcoesNome}
-                      selecionados={filtroNome} onChange={setFiltroNome} />
+                      selecionados={filtroNome} onChange={(v) => setFiltroNome(v)} />
                   </th>
                   <th className="px-2 pb-3">
                     <FiltroColuna label="Cor" opcoes={opcoesCor}
-                      selecionados={filtroCor} onChange={setFiltroCor} />
+                      selecionados={filtroCor} onChange={(v) => setFiltroCor(v)} />
                   </th>
                   <th className="px-2 pb-3">
                     <FiltroColuna label="Localizacao" opcoes={opcoesLocal}
-                      selecionados={filtroLocal} onChange={setFiltroLocal} />
+                      selecionados={filtroLocal} onChange={(v) => setFiltroLocal(v)} />
                   </th>
                   <th className="px-2 pb-3">
                     <FiltroColuna label="Carretel" opcoes={opcoesCarretel}
-                      selecionados={filtroCarretel} onChange={setFiltroCarretel} />
+                      selecionados={filtroCarretel} onChange={(v) => setFiltroCarretel(v)} />
                   </th>
                   <th className="px-2 pb-3" />
                   <th className="px-2 pb-3" />
