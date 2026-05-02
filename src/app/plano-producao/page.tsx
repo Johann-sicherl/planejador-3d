@@ -411,7 +411,7 @@ export default function PlanoProducaoPage() {
 
   async function confirmarFinalizacao() {
     if (!finalizacaoEmAndamento) return;
-    const snap = { ...finalizacaoEmAndamento };
+    const snap = { ...finalizacaoEmAndamento, slots: finalizacaoEmAndamento.slots.map(s => ({...s})) };
     setFinalizacaoEmAndamento((prev) => prev ? { ...prev, salvando: true } : null);
     const planoAtual = planos.find((p) => p.id_pedido === snap.idPedido);
     try {
