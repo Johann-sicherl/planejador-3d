@@ -54,8 +54,9 @@ type FalhaEmAndamento = {
 type SlotFilamento = {
   idFilamento: number;
   nomeFilamento: string;
+  nomeStl: string;
   gramas: number;
-  idEstoqueEscolhido: string; // id do registro estoque escolhido (id_filamento + rowid)
+  idEstoqueEscolhido: string;
 };
 
 type FinalizacaoEmAndamento = {
@@ -308,9 +309,12 @@ export default function PlanoProducaoPage() {
           const estoqueDisp = (options.estoque || [])
             .filter((e) => Number(e.id_filamento) === idFil)
             .sort((a, b) => Number(b.qtd_estoque_gramas || 0) - Number(a.qtd_estoque_gramas || 0));
+          // Nome do STL/componente para exibição
+          const nomeStl = String((options.componentes||[]).find((c)=>Number(c.id_componente_stl)===Number(linha.id_componente_stl))?.nome_componente ?? `STL ${linha.id_componente_stl}`);
           slots.push({
             idFilamento: idFil,
             nomeFilamento: `${nomeFil}${cor}`,
+            nomeStl,
             gramas: gramas * Number(linha.qtd_componente || 1),
             idEstoqueEscolhido: estoqueDisp.length > 0 ? String(estoqueDisp[0].id_filamento) + "_" + String(estoqueDisp[0].localizacao ?? "0") : "",
           });
@@ -960,31 +964,42 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                 const estoqueDisp = (options?.estoque || [])
                   .filter((e) => Number(e.id_filamento) === slot.idFilamento)
                   .sort((a, b) => Number(b.qtd_estoque_gramas || 0) - Number(a.qtd_estoque_gramas || 0));
-                const key = `${slot.idFilamento}_${slot.gramas}_${idx}`;
+                const key = `${slot.nomeStl}_${slot.idFilamento}_${idx}`;
                 return (
-                  <div key={key} className="space-y-1">
-                    <p className="text-[10px] font-bold text-slate-400">
+                  <div key={key} className="space-y-1 border-t border-white/5 pt-2 first:border-0 first:pt-0">
+                    <p className="text-[10px] font-black text-slate-300">{slot.nomeStl}</p>
+                    <p className="text-[10px] font-bold text-slate-500">
                       {slot.nomeFilamento} — <span className="text-cyan-300">{slot.gramas}g necessários</span>
                     </p>
-                    <select
-                      value={slot.idEstoqueEscolhido}
-                      onChange={(e) => { e.stopPropagation(); onFinSlotChange?.(idx, e.target.value); }}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      className="w-full rounded-lg border border-white/10 bg-slate-950/80 px-2 py-1.5 text-xs text-white outline-none focus:border-emerald-400"
-                    >
-                      <option value="">Selecione o carretel</option>
+                    {/* Lista de botões — evita problema do DnD com <select> */}
+                    <div className="space-y-1">
+                      {estoqueDisp.length === 0 && (
+                        <p className="text-[10px] text-red-400">Nenhum estoque disponível</p>
+                      )}
                       {estoqueDisp.map((est, j) => {
                         const disponivel = Number(est.qtd_estoque_gramas || 0);
                         const loc = est.localizacao ? ` | ${est.localizacao}` : "";
                         const suficiente = disponivel >= slot.gramas;
                         const estKey = `${est.id_filamento}_${est.localizacao ?? j}`;
+                        const selecionado = slot.idEstoqueEscolhido === estKey;
                         return (
-                          <option key={estKey} value={estKey}>
+                          <button
+                            key={estKey}
+                            type="button"
+                            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                            onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                            onClick={(e) => { e.stopPropagation(); onFinSlotChange?.(idx, estKey); }}
+                            className={`w-full rounded-lg px-2 py-1.5 text-left text-[11px] font-bold transition-colors border ${
+                              selecionado
+                                ? "border-emerald-400/60 bg-emerald-400/20 text-emerald-300"
+                                : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+                            }`}
+                          >
                             {suficiente ? "✅" : "⚠️"} {disponivel}g disponível{loc}
-                          </option>
+                          </button>
                         );
                       })}
-                    </select>
+                    </div>
                     {slot.idEstoqueEscolhido && estoqueDisp.length > 0 && (()=>{
                       const escolhido = estoqueDisp.find((e) => `${e.id_filamento}_${e.localizacao ?? "0"}` === slot.idEstoqueEscolhido || `${e.id_filamento}_${e.localizacao}` === slot.idEstoqueEscolhido);
                       const disp = Number(escolhido?.qtd_estoque_gramas || 0);
