@@ -259,6 +259,37 @@ export default function PlanoProducaoPage() {
     finally { setSaving(false); }
   }
 
+  const ORDEM_COLUNAS: StatusProducao[] = ["pedidos","fila","producao","finalizado","falha"];
+
+  async function moverPlano(idPedido: number, direcao: "avancar" | "recuar") {
+    const planoAtual = planos.find((p) => p.id_pedido === idPedido);
+    if (!planoAtual) return;
+    const statusAtual = planoAtual.status_producao || "pedidos";
+    const idxAtual = ORDEM_COLUNAS.indexOf(statusAtual as StatusProducao);
+    const idxNovo  = direcao === "avancar" ? idxAtual + 1 : idxAtual - 1;
+    if (idxNovo < 0 || idxNovo >= ORDEM_COLUNAS.length) return;
+    const novoStatus = ORDEM_COLUNAS[idxNovo];
+
+    // Ao avançar para finalizado, abre o modal de seleção de carreteis
+    if (novoStatus === "finalizado" && planoAtual.id_3mf && options) {
+      const fakeEvent = { active: { id: String(idPedido) }, over: { id: "finalizado" } };
+      await handleDragEnd(fakeEvent as any);
+      return;
+    }
+
+    const backup = planos;
+    setPlanos((prev) => prev.map((p) => p.id_pedido === idPedido
+      ? { ...p, status_producao: novoStatus, progresso: novoStatus === "finalizado" ? 100 : p.progresso }
+      : p
+    ));
+    const res = await fetch("/api/plano-producao", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...planoAtual, status_producao: novoStatus }),
+    });
+    const result = await res.json();
+    if (!res.ok || !result.ok) { setPlanos(backup); setErro(apiError(result)); }
+  }
+
   async function excluirPlano(idPedido:number) {
     if (!window.confirm("Excluir este pedido do plano de producao?")) return;
     try {
@@ -642,7 +673,7 @@ export default function PlanoProducaoPage() {
                   finalizacaoEmAndamento={finalizacaoEmAndamento}
                   onFinSlotChange={(idx,val)=>setFinalizacaoEmAndamento((prev)=>prev?{...prev,slots:prev.slots.map((s,j)=>j===idx?{...s,idEstoqueEscolhido:val}:s)}:null)}
                   onFinConfirm={confirmarFinalizacao} onFinCancel={cancelarFinalizacao}
-                  onEdit={editarPlano} onDelete={excluirPlano} />
+                  onMover={moverPlano} onEdit={editarPlano} onDelete={excluirPlano} />
               );
             })}
           </section>
@@ -1069,16 +1100,32 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
             </div>
           )}
 
-          {/* Botoes editar/excluir */}
+          {/* Botoes editar/excluir + setas de navegação */}
           {!flutuando&&!aguardaForm&&(
-            <div className="mx-3 mb-3 flex gap-2">
-              <button onClick={()=>onEdit?.(plano)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-2 py-1.5 text-xs font-bold text-cyan-300 hover:bg-cyan-400/20">
-                <Edit3 className="h-3 w-3"/> Editar
-              </button>
-              <button onClick={()=>onDelete?.(plano.id_pedido)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-400/30 bg-red-400/10 px-2 py-1.5 text-xs font-bold text-red-300 hover:bg-red-400/20">
-                <Trash2 className="h-3 w-3"/> Excluir
-              </button>
-            </div>
+            <>
+              <div className="mx-3 mb-2 flex gap-2">
+                <button type="button"
+                  onPointerDown={(e)=>e.stopPropagation()}
+                  onClick={(e)=>{e.stopPropagation();onMover?.(plano.id_pedido,"recuar");}}
+                  className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-xs font-bold text-slate-400 hover:bg-white/10 hover:text-slate-200 active:scale-95">
+                  <ChevronLeft className="h-4 w-4"/> Recuar
+                </button>
+                <button type="button"
+                  onPointerDown={(e)=>e.stopPropagation()}
+                  onClick={(e)=>{e.stopPropagation();onMover?.(plano.id_pedido,"avancar");}}
+                  className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-violet-400/30 bg-violet-400/10 px-2 py-2 text-xs font-bold text-violet-300 hover:bg-violet-400/20 active:scale-95">
+                  Avancar <ChevronRight className="h-4 w-4"/>
+                </button>
+              </div>
+              <div className="mx-3 mb-3 flex gap-2">
+                <button onClick={()=>onEdit?.(plano)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-2 py-1.5 text-xs font-bold text-cyan-300 hover:bg-cyan-400/20">
+                  <Edit3 className="h-3 w-3"/> Editar
+                </button>
+                <button onClick={()=>onDelete?.(plano.id_pedido)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-400/30 bg-red-400/10 px-2 py-1.5 text-xs font-bold text-red-300 hover:bg-red-400/20">
+                  <Trash2 className="h-3 w-3"/> Excluir
+                </button>
+              </div>
+            </>
           )}
         </>
       )}
