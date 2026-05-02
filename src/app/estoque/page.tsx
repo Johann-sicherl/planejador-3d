@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionButtons,
   Feedback,
@@ -11,21 +11,22 @@ import {
   useAuthGuard,
   useCrudList,
 } from "../_shared";
+import { ChevronDown, Filter, X } from "lucide-react";
 
-type Filamento = { id_filamento: number; nome_filamento: string; material_filamento: string | null; cor_filamento: string | null};
-type Carretel = { id_carretel: number; marca_carretel: string; peso_carretel_g: number };
+type Filamento = { id_filamento: number; nome_filamento: string; material_filamento: string | null; cor_filamento: string | null };
+type Carretel  = { id_carretel: number; marca_carretel: string; peso_carretel_g: number };
 
 type RegistroEstoque = {
-  id_filamento?: number | null;
+  id_filamento?:      number | null;
   qtd_estoque_gramas?: number | null;
-  localizacao?: string | null;
+  localizacao?:       string | null;
   peso_com_carretel_g?: number | null;
-  id_carretel?: number | null;
-  carretel?: Carretel | null;
+  id_carretel?:       number | null;
+  carretel?:          Carretel | null;
 };
 
 type RegistroCarretel = {
-  id_carretel?: number;
+  id_carretel?:    number;
   marca_carretel?: string | null;
   peso_carretel_g?: number | null;
 };
@@ -33,35 +34,159 @@ type RegistroCarretel = {
 const FIELD_CLASS =
   "w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none focus:border-cyan-400";
 
+// ── Componente FiltroColuna (dropdown estilo Excel) ─────────────────────────
+function FiltroColuna({
+  label,
+  opcoes,
+  selecionados,
+  onChange,
+}: {
+  label: string;
+  opcoes: string[];
+  selecionados: Set<string>;
+  onChange: (novo: Set<string>) => void;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [busca,  setBusca]  = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+  const ativo = selecionados.size > 0 && selecionados.size < opcoes.length;
+
+  // Fecha ao clicar fora
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setAberto(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const opcoesFiltradas = opcoes.filter((o) =>
+    o.toLowerCase().includes(busca.toLowerCase())
+  );
+
+  function toggleItem(valor: string) {
+    const novo = new Set(selecionados);
+    if (novo.has(valor)) novo.delete(valor);
+    else novo.add(valor);
+    onChange(novo);
+  }
+
+  function selecionarTodos() {
+    onChange(new Set(opcoes));
+  }
+
+  function limpar() {
+    onChange(new Set());
+    setBusca("");
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setAberto((v) => !v)}
+        className={`flex w-full items-center justify-between gap-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-colors ${
+          ativo
+            ? "border border-cyan-400/50 bg-cyan-400/10 text-cyan-300"
+            : "border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200"
+        }`}
+      >
+        <span className="flex items-center gap-1 truncate">
+          {ativo && <Filter className="h-3 w-3 shrink-0" />}
+          {label}
+        </span>
+        <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${aberto ? "rotate-180" : ""}`} />
+      </button>
+
+      {aberto && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-2xl border border-white/15 bg-slate-900 shadow-2xl shadow-black/50">
+          {/* Busca interna */}
+          <div className="border-b border-white/10 p-2">
+            <input
+              autoFocus
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Pesquisar..."
+              className="w-full rounded-lg border border-white/10 bg-slate-950/80 px-2 py-1.5 text-xs text-white outline-none focus:border-cyan-400 placeholder:text-slate-600"
+            />
+          </div>
+
+          {/* Ações rápidas */}
+          <div className="flex gap-1 border-b border-white/10 px-2 py-1.5">
+            <button
+              onClick={selecionarTodos}
+              className="flex-1 rounded-lg bg-white/5 px-2 py-1 text-xs font-bold text-slate-300 hover:bg-white/10"
+            >
+              Todos
+            </button>
+            <button
+              onClick={limpar}
+              className="flex-1 rounded-lg bg-white/5 px-2 py-1 text-xs font-bold text-slate-300 hover:bg-white/10"
+            >
+              Limpar
+            </button>
+          </div>
+
+          {/* Lista com checkboxes */}
+          <ul className="max-h-48 overflow-y-auto p-1">
+            {opcoesFiltradas.length === 0 && (
+              <li className="px-3 py-2 text-xs text-slate-500">Nenhum resultado</li>
+            )}
+            {opcoesFiltradas.map((opcao) => {
+              const marcado = selecionados.size === 0 || selecionados.has(opcao);
+              return (
+                <li key={opcao}>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-200 hover:bg-white/10">
+                    <input
+                      type="checkbox"
+                      checked={marcado}
+                      onChange={() => toggleItem(opcao)}
+                      className="h-3.5 w-3.5 accent-cyan-400"
+                    />
+                    <span className="truncate">{opcao || "(vazio)"}</span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Página principal ─────────────────────────────────────────────────────────
 export default function Page() {
   const { ready } = useAuthGuard();
-  const { data: estoque, loading: loadingEstoque, erro: erroEstoque, setErro: setErroEstoque, reload: reloadEstoque } =
-    useCrudList<RegistroEstoque>("/api/estoque");
-  const { data: carreteis, loading: loadingCarreteis, erro: erroCarreteis, setErro: setErroCarreteis, reload: reloadCarreteis } =
-    useCrudList<RegistroCarretel>("/api/pesos-carreteis");
+  const {
+    data: estoque, loading: loadingEstoque,
+    erro: erroEstoque, setErro: setErroEstoque, reload: reloadEstoque,
+  } = useCrudList<RegistroEstoque>("/api/estoque");
+  const {
+    data: carreteis, loading: loadingCarreteis,
+    erro: erroCarreteis, setErro: setErroCarreteis, reload: reloadCarreteis,
+  } = useCrudList<RegistroCarretel>("/api/pesos-carreteis");
 
-  const [filamentos, setFilamentos] = useState<Filamento[]>([]);
-  const [salvando, setSalvando] = useState(false);
-  const [mensagem, setMensagem] = useState("");
+  const [filamentos,  setFilamentos]  = useState<Filamento[]>([]);
+  const [salvando,    setSalvando]    = useState(false);
+  const [mensagem,    setMensagem]    = useState("");
 
-  // Filtros da tabela de estoque
-  const [filtroNome,      setFiltroNome]      = useState("");
-  const [filtroCor,       setFiltroCor]       = useState("");
-  const [filtroLocal,     setFiltroLocal]     = useState("");
-  const [filtroCarretel,  setFiltroCarretel]  = useState("");
-  const [filtroLiquido,   setFiltroLiquido]   = useState("");
+  // Filtros Excel — Set vazio = todos visíveis
+  const [filtroNome,     setFiltroNome]     = useState<Set<string>>(new Set());
+  const [filtroCor,      setFiltroCor]      = useState<Set<string>>(new Set());
+  const [filtroLocal,    setFiltroLocal]    = useState<Set<string>>(new Set());
+  const [filtroCarretel, setFiltroCarretel] = useState<Set<string>>(new Set());
 
   // Estoque form
   const [editingEstoqueId, setEditingEstoqueId] = useState<string | null>(null);
-  const [idFilamento, setIdFilamento] = useState("");
-  const [pesoComCarretelG, setPesoComCarretelG] = useState("");
-  const [idCarretel, setIdCarretel] = useState("");
-  const [localizacao, setLocalizacao] = useState("");
+  const [idFilamento,      setIdFilamento]       = useState("");
+  const [pesoComCarretelG, setPesoComCarretelG]  = useState("");
+  const [idCarretel,       setIdCarretel]         = useState("");
+  const [localizacao,      setLocalizacao]        = useState("");
 
   // Carretel form
   const [editingCarretelId, setEditingCarretelId] = useState<string | null>(null);
-  const [marcaCarretel, setMarcaCarretel] = useState("");
-  const [pesoCarretelG, setPesoCarretelG] = useState("");
+  const [marcaCarretel,     setMarcaCarretel]     = useState("");
+  const [pesoCarretelG,     setPesoCarretelG]     = useState("");
 
   useEffect(() => {
     fetch("/api/filamentos", { cache: "no-store" })
@@ -72,12 +197,61 @@ export default function Page() {
 
   // Calculos de peso
   const pesoCarretelSelecionado = carreteis.find((c) => String(c.id_carretel) === idCarretel);
-  const pesoBruto = NumberOrBlank(pesoComCarretelG);
-  const taraCarretel = pesoCarretelSelecionado?.peso_carretel_g ?? null;
-  const pesoSemCarretel = pesoBruto !== null && taraCarretel !== null
-    ? Math.max(0, Number((pesoBruto - taraCarretel).toFixed(1)))
-    : null;
+  const pesoBruto      = NumberOrBlank(pesoComCarretelG);
+  const taraCarretel   = pesoCarretelSelecionado?.peso_carretel_g ?? null;
+  const pesoSemCarretel =
+    pesoBruto !== null && taraCarretel !== null
+      ? Math.max(0, Number((pesoBruto - taraCarretel).toFixed(1)))
+      : null;
 
+  // Dados enriquecidos para filtros e exibição
+  const estoqueEnriquecido = useMemo(() =>
+    estoque.map((row) => {
+      const fil    = filamentos.find((f) => f.id_filamento === row.id_filamento);
+      const tara   = row.carretel?.peso_carretel_g ?? null;
+      const bruto  = row.peso_com_carretel_g ?? null;
+      const liquido =
+        bruto !== null && tara !== null
+          ? Math.max(0, Number((bruto - tara).toFixed(1)))
+          : (row.qtd_estoque_gramas ?? null);
+      return {
+        row,
+        nome:     fil?.nome_filamento      ?? "-",
+        cor:      fil?.cor_filamento       ?? "-",
+        local:    row.localizacao          ?? "-",
+        carretel: row.carretel?.marca_carretel ?? "-",
+        tara,
+        bruto,
+        liquido,
+      };
+    }),
+  [estoque, filamentos]);
+
+  // Opções únicas para cada coluna (SELECT DISTINCT)
+  const opcoesNome     = useMemo(() => [...new Set(estoqueEnriquecido.map((r) => r.nome))].sort(),     [estoqueEnriquecido]);
+  const opcoesCor      = useMemo(() => [...new Set(estoqueEnriquecido.map((r) => r.cor))].sort(),      [estoqueEnriquecido]);
+  const opcoesLocal    = useMemo(() => [...new Set(estoqueEnriquecido.map((r) => r.local))].sort(),    [estoqueEnriquecido]);
+  const opcoesCarretel = useMemo(() => [...new Set(estoqueEnriquecido.map((r) => r.carretel))].sort(), [estoqueEnriquecido]);
+
+  // Filtragem: Set vazio = tudo passa
+  const estoqueFiltrado = useMemo(() =>
+    estoqueEnriquecido.filter((r) =>
+      (filtroNome.size     === 0 || filtroNome.has(r.nome))      &&
+      (filtroCor.size      === 0 || filtroCor.has(r.cor))        &&
+      (filtroLocal.size    === 0 || filtroLocal.has(r.local))    &&
+      (filtroCarretel.size === 0 || filtroCarretel.has(r.carretel))
+    ),
+  [estoqueEnriquecido, filtroNome, filtroCor, filtroLocal, filtroCarretel]);
+
+  const algumFiltroAtivo =
+    filtroNome.size > 0 || filtroCor.size > 0 || filtroLocal.size > 0 || filtroCarretel.size > 0;
+
+  function limparTodosFiltros() {
+    setFiltroNome(new Set()); setFiltroCor(new Set());
+    setFiltroLocal(new Set()); setFiltroCarretel(new Set());
+  }
+
+  // Estoque CRUD
   function resetEstoqueForm() {
     setEditingEstoqueId(null);
     setIdFilamento(""); setPesoComCarretelG(""); setIdCarretel(""); setLocalizacao("");
@@ -112,15 +286,17 @@ export default function Page() {
     try {
       setSalvando(true); setErroEstoque(""); setMensagem("");
       const payload: Record<string, unknown> = {
-        id_filamento: idFilamento ? Number(idFilamento) : null,
+        id_filamento:       idFilamento ? Number(idFilamento) : null,
         peso_com_carretel_g: NumberOrBlank(pesoComCarretelG),
         qtd_estoque_gramas: pesoSemCarretel,
-        id_carretel: idCarretel ? Number(idCarretel) : null,
-        localizacao: localizacao || null,
+        id_carretel:        idCarretel ? Number(idCarretel) : null,
+        localizacao:        localizacao || null,
       };
       const method = editingEstoqueId ? "PUT" : "POST";
       if (editingEstoqueId) payload.id_filamento = Number(editingEstoqueId);
-      const r = await fetch("/api/estoque", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const r = await fetch("/api/estoque", {
+        method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
       const res = await r.json();
       if (!r.ok || !res.ok) throw new Error(res.error || "Erro ao salvar.");
       setMensagem(editingEstoqueId ? "Estoque atualizado." : "Estoque salvo.");
@@ -139,17 +315,7 @@ export default function Page() {
     setMarcaCarretel(String(row.marca_carretel ?? ""));
     setPesoCarretelG(String(row.peso_carretel_g ?? ""));
   }
-  function filamentoLabel(f?: Filamento | null) {
-  if (!f) return "-";
 
-  return [
-    f.nome_filamento,
-    f.material_filamento,
-    f.cor_filamento,
-  ]
-    .filter(Boolean)
-    .join(" - ");
-}
   async function handleCarretelDelete(id: string) {
     if (!confirm("Excluir este peso de carretel?")) return;
     try {
@@ -164,17 +330,20 @@ export default function Page() {
       setErroCarreteis(err instanceof Error ? err.message : "Erro ao excluir.");
     }
   }
+
   async function handleCarretelSubmit(event: FormEvent) {
     event.preventDefault();
     try {
       setSalvando(true); setErroCarreteis(""); setMensagem("");
       const payload: Record<string, unknown> = {
-        marca_carretel: marcaCarretel || null,
+        marca_carretel:  marcaCarretel || null,
         peso_carretel_g: NumberOrBlank(pesoCarretelG),
       };
       const method = editingCarretelId ? "PUT" : "POST";
       if (editingCarretelId) payload.id_carretel = Number(editingCarretelId);
-      const r = await fetch("/api/pesos-carreteis", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const r = await fetch("/api/pesos-carreteis", {
+        method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
       const res = await r.json();
       if (!r.ok || !res.ok) throw new Error(res.error || "Erro ao salvar.");
       setMensagem(editingCarretelId ? "Carretel atualizado." : "Carretel salvo.");
@@ -184,42 +353,22 @@ export default function Page() {
     } finally { setSalvando(false); }
   }
 
-  // Estoque filtrado dinamicamente
-  const estoqueFiltrado = useMemo(() => {
-    return estoque.filter((row) => {
-      const fil       = filamentos.find((f) => f.id_filamento === row.id_filamento);
-      const nome      = fil?.nome_filamento ?? "";
-      const cor       = fil?.cor_filamento  ?? "";
-      const local     = row.localizacao     ?? "";
-      const carretel  = row.carretel?.marca_carretel ?? "";
-      const tara      = row.carretel?.peso_carretel_g ?? null;
-      const bruto     = row.peso_com_carretel_g ?? null;
-      const liquido   = bruto !== null && tara !== null
-        ? Math.max(0, Number((bruto - tara).toFixed(1)))
-        : (row.qtd_estoque_gramas ?? null);
-      const liquidoStr = liquido !== null ? String(liquido) : "";
-
-      return (
-        nome.toLowerCase().includes(filtroNome.toLowerCase()) &&
-        cor.toLowerCase().includes(filtroCor.toLowerCase()) &&
-        local.toLowerCase().includes(filtroLocal.toLowerCase()) &&
-        carretel.toLowerCase().includes(filtroCarretel.toLowerCase()) &&
-        liquidoStr.includes(filtroLiquido)
-      );
-    });
-  }, [estoque, filamentos, filtroNome, filtroCor, filtroLocal, filtroCarretel, filtroLiquido]);
-
   if (!ready) return <main className="min-h-screen p-8 text-slate-100">Carregando...</main>;
 
   return (
-    <PageShell title="Estoque" description="Controle de filamentos em estoque. Pese o carretel completo — o sistema desconta a tara automaticamente.">
+    <PageShell
+      title="Estoque"
+      description="Controle de filamentos em estoque. Pese o carretel completo — o sistema desconta a tara automaticamente."
+    >
       <Feedback erro={""} mensagem={mensagem} />
 
-      {/* ── ESTOQUE ───────────────────────────────────────── */}
+      {/* ── FORMULÁRIO DE ESTOQUE ─────────────────────────── */}
       <GlassCard>
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-xl font-black text-white">{editingEstoqueId ? "Editar estoque" : "Novo registro de estoque"}</h2>
+            <h2 className="text-xl font-black text-white">
+              {editingEstoqueId ? "Editar estoque" : "Novo registro de estoque"}
+            </h2>
             <p className="mt-1 text-sm text-slate-400">
               Informe o filamento, pese o carretel completo e selecione a marca do carretel para calcular o filamento liquido.
             </p>
@@ -267,16 +416,12 @@ export default function Page() {
             <label className="mb-2 block text-sm font-bold text-slate-300">Filamento liquido (g)</label>
             <div className={`flex items-center rounded-2xl border px-4 py-3 font-black text-lg ${
               pesoSemCarretel !== null
-                ? pesoSemCarretel > 200
-                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                  : pesoSemCarretel > 50
-                  ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                ? pesoSemCarretel > 200 ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                  : pesoSemCarretel > 50 ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
                   : "border-red-500/40 bg-red-500/10 text-red-300"
                 : "border-white/10 bg-white/[0.04] text-slate-500"
             }`}>
-              {pesoSemCarretel !== null
-                ? `${pesoSemCarretel.toLocaleString("pt-BR")} g`
-                : "—"}
+              {pesoSemCarretel !== null ? `${pesoSemCarretel.toLocaleString("pt-BR")} g` : "—"}
               {pesoSemCarretel !== null && taraCarretel !== null && (
                 <span className="ml-auto text-xs font-normal opacity-70">
                   {pesoBruto}g - {taraCarretel}g
@@ -299,89 +444,103 @@ export default function Page() {
           </div>
         </form>
 
-        {erroEstoque && <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{erroEstoque}</div>}
+        {erroEstoque && (
+          <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            {erroEstoque}
+          </div>
+        )}
       </GlassCard>
 
+      {/* ── TABELA DE ESTOQUE ─────────────────────────────── */}
       <GlassCard>
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-black text-white">Estoque atual</h2>
-            <p className="mt-1 text-sm text-slate-400">Saldo de filamentos com peso liquido calculado automaticamente.</p>
+            <p className="mt-1 text-sm text-slate-400">
+              Saldo de filamentos com peso liquido calculado automaticamente.
+              {algumFiltroAtivo && (
+                <span className="ml-2 text-cyan-400">
+                  {estoqueFiltrado.length} de {estoque.length} registros visíveis
+                </span>
+              )}
+            </p>
           </div>
-          <button onClick={reloadEstoque}
-            className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-bold text-slate-200 hover:bg-white/10">
-            Atualizar
-          </button>
+          <div className="flex items-center gap-2">
+            {algumFiltroAtivo && (
+              <button onClick={limparTodosFiltros}
+                className="flex items-center gap-1 rounded-2xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-500/20">
+                <X className="h-3 w-3" /> Limpar filtros
+              </button>
+            )}
+            <button onClick={reloadEstoque}
+              className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-bold text-slate-200 hover:bg-white/10">
+              Atualizar
+            </button>
+          </div>
         </div>
+
         <LoadingOrEmpty loading={loadingEstoque} empty={estoque.length === 0}
           loadingText="Carregando estoque..." emptyText="Nenhum registro de estoque.">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] border-separate border-spacing-y-2 text-sm">
+            <table className="w-full min-w-[860px] border-separate border-spacing-y-1 text-sm">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-widest text-slate-400">
-                  <th className="px-4 py-2">Filamento</th>
-                  <th className="px-4 py-2">Cor</th>
-                  <th className="px-4 py-2">Localizacao</th>
-                  <th className="px-4 py-2">Marca carretel</th>
-                  <th className="px-4 py-2">Peso c/ carretel (g)</th>
-                  <th className="px-4 py-2">Tara (g)</th>
-                  <th className="px-4 py-2">Filamento liquido (g)</th>
-                  <th className="px-4 py-2">Acoes</th>
+                {/* Linha de labels */}
+                <tr className="text-left text-xs uppercase tracking-widest text-slate-500">
+                  <th className="px-2 pb-1 pt-2">Filamento</th>
+                  <th className="px-2 pb-1 pt-2">Cor</th>
+                  <th className="px-2 pb-1 pt-2">Localizacao</th>
+                  <th className="px-2 pb-1 pt-2">Marca carretel</th>
+                  <th className="px-2 pb-1 pt-2">Peso c/ carretel</th>
+                  <th className="px-2 pb-1 pt-2">Tara</th>
+                  <th className="px-2 pb-1 pt-2">Filamento liquido</th>
+                  <th className="px-2 pb-1 pt-2">Acoes</th>
                 </tr>
-                {/* Linha de filtros — estilo Excel */}
+                {/* Linha de filtros estilo Excel */}
                 <tr>
-                  <th className="px-2 py-1">
-                    <input value={filtroNome} onChange={(e) => setFiltroNome(e.target.value)}
-                      placeholder="Filtrar..." className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-2 py-1 text-xs text-slate-200 outline-none focus:border-cyan-400 placeholder:text-slate-600 font-normal" />
+                  <th className="px-2 pb-3">
+                    <FiltroColuna label="Filamento" opcoes={opcoesNome}
+                      selecionados={filtroNome} onChange={setFiltroNome} />
                   </th>
-                  <th className="px-2 py-1">
-                    <input value={filtroCor} onChange={(e) => setFiltroCor(e.target.value)}
-                      placeholder="Filtrar..." className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-2 py-1 text-xs text-slate-200 outline-none focus:border-cyan-400 placeholder:text-slate-600 font-normal" />
+                  <th className="px-2 pb-3">
+                    <FiltroColuna label="Cor" opcoes={opcoesCor}
+                      selecionados={filtroCor} onChange={setFiltroCor} />
                   </th>
-                  <th className="px-2 py-1">
-                    <input value={filtroLocal} onChange={(e) => setFiltroLocal(e.target.value)}
-                      placeholder="Filtrar..." className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-2 py-1 text-xs text-slate-200 outline-none focus:border-cyan-400 placeholder:text-slate-600 font-normal" />
+                  <th className="px-2 pb-3">
+                    <FiltroColuna label="Localizacao" opcoes={opcoesLocal}
+                      selecionados={filtroLocal} onChange={setFiltroLocal} />
                   </th>
-                  <th className="px-2 py-1">
-                    <input value={filtroCarretel} onChange={(e) => setFiltroCarretel(e.target.value)}
-                      placeholder="Filtrar..." className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-2 py-1 text-xs text-slate-200 outline-none focus:border-cyan-400 placeholder:text-slate-600 font-normal" />
+                  <th className="px-2 pb-3">
+                    <FiltroColuna label="Carretel" opcoes={opcoesCarretel}
+                      selecionados={filtroCarretel} onChange={setFiltroCarretel} />
                   </th>
-                  <th className="px-2 py-1" />
-                  <th className="px-2 py-1" />
-                  <th className="px-2 py-1">
-                    <input value={filtroLiquido} onChange={(e) => setFiltroLiquido(e.target.value)}
-                      placeholder="Filtrar..." className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-2 py-1 text-xs text-slate-200 outline-none focus:border-cyan-400 placeholder:text-slate-600 font-normal" />
-                  </th>
-                  <th className="px-2 py-1">
-                    {(filtroNome||filtroCor||filtroLocal||filtroCarretel||filtroLiquido) && (
-                      <button onClick={() => { setFiltroNome(""); setFiltroCor(""); setFiltroLocal(""); setFiltroCarretel(""); setFiltroLiquido(""); }}
-                        className="w-full rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-1 text-xs font-bold text-red-300 hover:bg-red-500/20">
-                        Limpar
-                      </button>
-                    )}
-                  </th>
+                  <th className="px-2 pb-3" />
+                  <th className="px-2 pb-3" />
+                  <th className="px-2 pb-3" />
+                  <th className="px-2 pb-3" />
                 </tr>
               </thead>
               <tbody>
-                {estoqueFiltrado.map((row, i) => {
-                  const tara = row.carretel?.peso_carretel_g ?? null;
-                  const bruto = row.peso_com_carretel_g ?? null;
-                  const liquido = bruto !== null && tara !== null
-                    ? Math.max(0, Number((bruto - tara).toFixed(1)))
-                    : (row.qtd_estoque_gramas ?? null);
-                  return (
+                {estoqueFiltrado.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-sm text-slate-500">
+                      Nenhum registro corresponde aos filtros selecionados.
+                    </td>
+                  </tr>
+                ) : (
+                  estoqueFiltrado.map(({ row, nome, cor, local, carretel, tara, bruto, liquido }, i) => (
                     <tr key={String(row.id_filamento ?? i)} className="bg-white/[0.035] text-slate-200">
-                      <td className="rounded-l-2xl px-4 py-3 font-bold text-white">
-                        {filamentos.find((f) => f.id_filamento === row.id_filamento)?.nome_filamento ?? String(row.id_filamento ?? "-")}
-                      </td>
-                      <td className="px-4 py-3 text-slate-300">{filamentos.find((f) => f.id_filamento === row.id_filamento)?.cor_filamento || "-"}</td>
-                      <td className="px-4 py-3 text-slate-400">{row.localizacao || "-"}</td>
-                      <td className="px-4 py-3">{row.carretel?.marca_carretel || "-"}</td>
+                      <td className="rounded-l-2xl px-4 py-3 font-bold text-white">{nome}</td>
+                      <td className="px-4 py-3 text-slate-300">{cor}</td>
+                      <td className="px-4 py-3 text-slate-400">{local}</td>
+                      <td className="px-4 py-3">{carretel}</td>
                       <td className="px-4 py-3">{bruto != null ? `${bruto} g` : "-"}</td>
                       <td className="px-4 py-3 text-slate-400">{tara != null ? `${tara} g` : "-"}</td>
                       <td className="px-4 py-3">
                         {liquido != null ? (
-                          <span className={`font-black ${liquido > 200 ? "text-emerald-300" : liquido > 50 ? "text-amber-300" : "text-red-300"}`}>
+                          <span className={`font-black ${
+                            liquido > 200 ? "text-emerald-300" :
+                            liquido > 50  ? "text-amber-300"   : "text-red-300"
+                          }`}>
                             {liquido.toLocaleString("pt-BR")} g
                           </span>
                         ) : "-"}
@@ -393,8 +552,8 @@ export default function Page() {
                         />
                       </td>
                     </tr>
-                  );
-                })}
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -437,7 +596,11 @@ export default function Page() {
           </div>
         </form>
 
-        {erroCarreteis && <div className="mb-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{erroCarreteis}</div>}
+        {erroCarreteis && (
+          <div className="mb-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            {erroCarreteis}
+          </div>
+        )}
 
         <LoadingOrEmpty loading={loadingCarreteis} empty={carreteis.length === 0}
           loadingText="Carregando carreteis..." emptyText="Nenhum carretel cadastrado.">
@@ -454,7 +617,9 @@ export default function Page() {
                 {carreteis.map((row) => (
                   <tr key={String(row.id_carretel)} className="bg-white/[0.035] text-slate-200">
                     <td className="rounded-l-2xl px-4 py-3 font-bold text-white">{row.marca_carretel || "-"}</td>
-                    <td className="px-4 py-3 font-mono text-violet-300">{row.peso_carretel_g != null ? `${row.peso_carretel_g} g` : "-"}</td>
+                    <td className="px-4 py-3 font-mono text-violet-300">
+                      {row.peso_carretel_g != null ? `${row.peso_carretel_g} g` : "-"}
+                    </td>
                     <td className="rounded-r-2xl px-4 py-3">
                       <ActionButtons
                         onEdit={() => fillCarretelForEdit(row)}
