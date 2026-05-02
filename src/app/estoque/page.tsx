@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   ActionButtons,
   Feedback,
@@ -43,6 +43,13 @@ export default function Page() {
   const [filamentos, setFilamentos] = useState<Filamento[]>([]);
   const [salvando, setSalvando] = useState(false);
   const [mensagem, setMensagem] = useState("");
+
+  // Filtros da tabela de estoque
+  const [filtroNome,      setFiltroNome]      = useState("");
+  const [filtroCor,       setFiltroCor]       = useState("");
+  const [filtroLocal,     setFiltroLocal]     = useState("");
+  const [filtroCarretel,  setFiltroCarretel]  = useState("");
+  const [filtroLiquido,   setFiltroLiquido]   = useState("");
 
   // Estoque form
   const [editingEstoqueId, setEditingEstoqueId] = useState<string | null>(null);
@@ -177,6 +184,31 @@ export default function Page() {
     } finally { setSalvando(false); }
   }
 
+  // Estoque filtrado dinamicamente
+  const estoqueFiltrado = useMemo(() => {
+    return estoque.filter((row) => {
+      const fil       = filamentos.find((f) => f.id_filamento === row.id_filamento);
+      const nome      = fil?.nome_filamento ?? "";
+      const cor       = fil?.cor_filamento  ?? "";
+      const local     = row.localizacao     ?? "";
+      const carretel  = row.carretel?.marca_carretel ?? "";
+      const tara      = row.carretel?.peso_carretel_g ?? null;
+      const bruto     = row.peso_com_carretel_g ?? null;
+      const liquido   = bruto !== null && tara !== null
+        ? Math.max(0, Number((bruto - tara).toFixed(1)))
+        : (row.qtd_estoque_gramas ?? null);
+      const liquidoStr = liquido !== null ? String(liquido) : "";
+
+      return (
+        nome.toLowerCase().includes(filtroNome.toLowerCase()) &&
+        cor.toLowerCase().includes(filtroCor.toLowerCase()) &&
+        local.toLowerCase().includes(filtroLocal.toLowerCase()) &&
+        carretel.toLowerCase().includes(filtroCarretel.toLowerCase()) &&
+        liquidoStr.includes(filtroLiquido)
+      );
+    });
+  }, [estoque, filamentos, filtroNome, filtroCor, filtroLocal, filtroCarretel, filtroLiquido]);
+
   if (!ready) return <main className="min-h-screen p-8 text-slate-100">Carregando...</main>;
 
   return (
@@ -296,9 +328,42 @@ export default function Page() {
                   <th className="px-4 py-2">Filamento liquido (g)</th>
                   <th className="px-4 py-2">Acoes</th>
                 </tr>
+                {/* Linha de filtros — estilo Excel */}
+                <tr>
+                  <th className="px-2 py-1">
+                    <input value={filtroNome} onChange={(e) => setFiltroNome(e.target.value)}
+                      placeholder="Filtrar..." className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-2 py-1 text-xs text-slate-200 outline-none focus:border-cyan-400 placeholder:text-slate-600 font-normal" />
+                  </th>
+                  <th className="px-2 py-1">
+                    <input value={filtroCor} onChange={(e) => setFiltroCor(e.target.value)}
+                      placeholder="Filtrar..." className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-2 py-1 text-xs text-slate-200 outline-none focus:border-cyan-400 placeholder:text-slate-600 font-normal" />
+                  </th>
+                  <th className="px-2 py-1">
+                    <input value={filtroLocal} onChange={(e) => setFiltroLocal(e.target.value)}
+                      placeholder="Filtrar..." className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-2 py-1 text-xs text-slate-200 outline-none focus:border-cyan-400 placeholder:text-slate-600 font-normal" />
+                  </th>
+                  <th className="px-2 py-1">
+                    <input value={filtroCarretel} onChange={(e) => setFiltroCarretel(e.target.value)}
+                      placeholder="Filtrar..." className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-2 py-1 text-xs text-slate-200 outline-none focus:border-cyan-400 placeholder:text-slate-600 font-normal" />
+                  </th>
+                  <th className="px-2 py-1" />
+                  <th className="px-2 py-1" />
+                  <th className="px-2 py-1">
+                    <input value={filtroLiquido} onChange={(e) => setFiltroLiquido(e.target.value)}
+                      placeholder="Filtrar..." className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-2 py-1 text-xs text-slate-200 outline-none focus:border-cyan-400 placeholder:text-slate-600 font-normal" />
+                  </th>
+                  <th className="px-2 py-1">
+                    {(filtroNome||filtroCor||filtroLocal||filtroCarretel||filtroLiquido) && (
+                      <button onClick={() => { setFiltroNome(""); setFiltroCor(""); setFiltroLocal(""); setFiltroCarretel(""); setFiltroLiquido(""); }}
+                        className="w-full rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-1 text-xs font-bold text-red-300 hover:bg-red-500/20">
+                        Limpar
+                      </button>
+                    )}
+                  </th>
+                </tr>
               </thead>
               <tbody>
-                {estoque.map((row, i) => {
+                {estoqueFiltrado.map((row, i) => {
                   const tara = row.carretel?.peso_carretel_g ?? null;
                   const bruto = row.peso_com_carretel_g ?? null;
                   const liquido = bruto !== null && tara !== null
