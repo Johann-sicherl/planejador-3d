@@ -258,14 +258,25 @@ export default function Page() {
   const opcoesCarretel = useMemo(() => [...new Set(estoqueEnriquecido.map((r) => r.carretel))].sort(), [estoqueEnriquecido]);
 
   // Filtragem: Set vazio = tudo passa
+  // Chaves primitivas derivadas dos arrays — useMemo detecta mudança por valor
+  const keyNome     = filtroNome.join("|");
+  const keyCor      = filtroCor.join("|");
+  const keyLocal    = filtroLocal.join("|");
+  const keyCarretel = filtroCarretel.join("|");
+
   const estoqueFiltrado = useMemo(() => {
-    const valorNum = filtroLiquidoValor !== "" ? Number(filtroLiquidoValor) : null;
+    const nomeSet     = new Set(filtroNome);
+    const corSet      = new Set(filtroCor);
+    const localSet    = new Set(filtroLocal);
+    const carretelSet = new Set(filtroCarretel);
+    const valorNum    = filtroLiquidoValor !== "" ? Number(filtroLiquidoValor) : null;
+
     return estoqueEnriquecido.filter((r) => {
       const passaTexto =
-        (filtroNome.length     === 0 || filtroNome.includes(r.nome))      &&
-        (filtroCor.length      === 0 || filtroCor.includes(r.cor))        &&
-        (filtroLocal.length    === 0 || filtroLocal.includes(r.local))    &&
-        (filtroCarretel.length === 0 || filtroCarretel.includes(r.carretel));
+        (nomeSet.size     === 0 || nomeSet.has(r.nome))      &&
+        (corSet.size      === 0 || corSet.has(r.cor))        &&
+        (localSet.size    === 0 || localSet.has(r.local))    &&
+        (carretelSet.size === 0 || carretelSet.has(r.carretel));
       if (!passaTexto) return false;
       if (filtroLiquidoOp === "" || valorNum === null || r.liquido === null) return true;
       if (filtroLiquidoOp === ">") return r.liquido >  valorNum;
@@ -273,8 +284,8 @@ export default function Page() {
       if (filtroLiquidoOp === "=") return r.liquido === valorNum;
       return true;
     });
-  // join() converte arrays em strings — useMemo detecta mudança corretamente
-  }, [estoqueEnriquecido, filtroNome.join(), filtroCor.join(), filtroLocal.join(), filtroCarretel.join(), filtroLiquidoOp, filtroLiquidoValor]);
+  // deps são strings primitivas — React compara por valor corretamente
+  }, [estoqueEnriquecido, keyNome, keyCor, keyLocal, keyCarretel, filtroLiquidoOp, filtroLiquidoValor]);
 
   const algumFiltroAtivo =
     filtroNome.length > 0 || filtroCor.length > 0 || filtroLocal.length > 0 || filtroCarretel.length > 0 ||
