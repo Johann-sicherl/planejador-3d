@@ -1005,10 +1005,13 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                         );
                       })}
                     </div>
-                    {slot.idEstoqueEscolhido && estoqueDisp.length > 0 && (()=>{
-                      const escolhido = estoqueDisp.find((e) => `${e.id_filamento}_${e.localizacao ?? "0"}` === slot.idEstoqueEscolhido || `${e.id_filamento}_${e.localizacao}` === slot.idEstoqueEscolhido);
+                    {slot.idEstoqueEscolhido && (()=>{
+                      // Extrai o índice do final da key para achar o carretel exato
+                      const parts = slot.idEstoqueEscolhido.split("_");
+                      const j = Number(parts[parts.length - 1]);
+                      const escolhido = !Number.isNaN(j) && j < estoqueDisp.length ? estoqueDisp[j] : null;
                       const disp = Number(escolhido?.qtd_estoque_gramas || 0);
-                      if (disp < slot.gramas) return <p className="text-[10px] text-amber-400">⚠️ Estoque insuficiente: {disp}g disponível, {slot.gramas}g necessário</p>;
+                      if (escolhido && disp < slot.gramas) return <p className="text-[10px] text-amber-400">⚠️ Estoque insuficiente: {disp}g disponível, {slot.gramas}g necessário</p>;
                       return null;
                     })()}
                   </div>
