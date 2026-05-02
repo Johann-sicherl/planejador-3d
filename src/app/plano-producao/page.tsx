@@ -8,7 +8,7 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Clock, Edit3, Factory,
+  AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Edit3, Factory,
   GripVertical, Package, Plus, Printer, Save, Sparkles, Trash2, X,
 } from "lucide-react";
 import { Feedback, PageShell } from "../_shared";
