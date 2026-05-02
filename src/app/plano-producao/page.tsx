@@ -718,6 +718,7 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
   finalizacaoEmAndamento:FinalizacaoEmAndamento|null;
   onFinSlotChange:(idx:number,val:string)=>void;
   onFinConfirm:()=>void; onFinCancel:()=>void;
+  onMover:(idPedido:number,direcao:"avancar"|"recuar")=>void;
   onEdit:(plano:PlanoProducao)=>void; onDelete:(idPedido:number)=>void;
 }) {
   const {setNodeRef,isOver}=useDroppable({id:coluna.id});
