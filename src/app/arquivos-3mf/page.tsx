@@ -13,6 +13,7 @@ import {
 } from "../_shared";
 
 type LinhaDB = {
+  id_linha: number;
   id_3mf: number;
   nome_arquivo_3mf: string | null;
   id_componente_stl: number | null;
@@ -24,16 +25,20 @@ type Componente = {
   nome_componente: string;
 };
 
-type Arquivo3mf = { nome: string; linhas: LinhaDB[] };
+type Arquivo3mf = { id_3mf: number; nome: string; linhas: LinhaDB[] };
 
 function agrupar(linhas: LinhaDB[]): Arquivo3mf[] {
-  const map = new Map<string, LinhaDB[]>();
+  const map = new Map<number, LinhaDB[]>();
   for (const l of linhas) {
-    const nome = l.nome_arquivo_3mf ?? "(sem nome)";
-    if (!map.has(nome)) map.set(nome, []);
-    map.get(nome)!.push(l);
+    const id = l.id_3mf;
+    if (!map.has(id)) map.set(id, []);
+    map.get(id)!.push(l);
   }
-  return [...map.entries()].map(([nome, ls]) => ({ nome, linhas: ls }));
+  return [...map.values()].map((ls) => ({
+    id_3mf: ls[0].id_3mf,
+    nome:   ls[0].nome_arquivo_3mf ?? "(sem nome)",
+    linhas: ls,
+  }));
 }
 
 const FIELD = "w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none focus:border-cyan-400";
@@ -95,22 +100,22 @@ export default function Page() {
     finally { setSalvando(false); }
   }
 
-  async function handleDeleteArquivo(nome: string) {
+  async function handleDeleteArquivo(id3mf: number, nome: string) {
     if (!confirm(`Excluir o arquivo "${nome}" e todos os seus componentes?`)) return;
     try {
       setErro(""); setMensagem("");
-      const res = await fetch("/api/arquivos-3mf?nome=" + encodeURIComponent(nome), { method: "DELETE" });
+      const res = await fetch("/api/arquivos-3mf?id_3mf=" + id3mf, { method: "DELETE" });
       const r = await res.json();
       if (!res.ok || !r.ok) throw new Error(r.error || "Erro ao excluir.");
       setMensagem("Arquivo excluído."); await reload();
     } catch (err) { setErro(err instanceof Error ? err.message : "Erro."); }
   }
 
-  async function handleDeleteLinha(id: number) {
+  async function handleDeleteLinha(idLinha: number) {
     if (!confirm("Remover este componente do arquivo?")) return;
     try {
       setErro(""); setMensagem("");
-      const res = await fetch("/api/arquivos-3mf?id=" + id, { method: "DELETE" });
+      const res = await fetch("/api/arquivos-3mf?id_linha=" + idLinha, { method: "DELETE" });
       const r = await res.json();
       if (!res.ok || !r.ok) throw new Error(r.error || "Erro ao excluir.");
       setMensagem("Componente removido."); await reload();
@@ -123,7 +128,7 @@ export default function Page() {
       setSalvando(true); setErro(""); setMensagem("");
       const res = await fetch("/api/arquivos-3mf", {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id_3mf: editingId, id_componente_stl: editComp ? Number(editComp) : null, qtd_componente: editQtd ? Number(editQtd) : null }),
+        body: JSON.stringify({ id_linha: editingId, id_componente_stl: editComp ? Number(editComp) : null, qtd_componente: editQtd ? Number(editQtd) : null }),
       });
       const r = await res.json();
       if (!res.ok || !r.ok) throw new Error(r.error || "Erro ao atualizar.");
@@ -206,14 +211,14 @@ export default function Page() {
           loadingText="Carregando arquivos..." emptyText="Nenhum arquivo 3MF cadastrado.">
           <div className="space-y-4">
             {arquivos.map((arq) => (
-              <div key={arq.nome} className="rounded-2xl border border-white/10 bg-white/[0.03]">
+              <div key={arq.id_3mf} className="rounded-2xl border border-white/10 bg-white/[0.03]">
                 <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
                   <span className="font-black text-white">{arq.nome}</span>
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-white/10 px-3 py-0.5 text-xs text-slate-400">
                       {arq.linhas.length} componente{arq.linhas.length !== 1 ? "s" : ""}
                     </span>
-                    <button type="button" onClick={() => handleDeleteArquivo(arq.nome)}
+                    <button type="button" onClick={() => handleDeleteArquivo(arq.id_3mf, arq.nome)}
                       className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-bold text-red-300 hover:bg-red-500/20">
                       Excluir arquivo
                     </button>
@@ -221,8 +226,8 @@ export default function Page() {
                 </div>
                 <div className="divide-y divide-white/5">
                   {arq.linhas.map((linha) => (
-                    <div key={linha.id_3mf} className="px-4 py-3">
-                      {editingId === linha.id_3mf ? (
+                    <div key={linha.id_linha} className="px-4 py-3">
+                      {editingId === linha.id_linha ? (
                         <div className="flex items-center gap-2">
                           <select value={editComp} onChange={(e) => setEditComp(e.target.value)}
                             className="flex-1 rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400">
@@ -243,8 +248,8 @@ export default function Page() {
                           <span>{componentes.find((c) => c.id_componente_stl === linha.id_componente_stl)?.nome_componente ?? `Componente ${linha.id_componente_stl}`}</span>
                           <div className="flex items-center gap-3">
                             <span className="text-slate-500">Qtd: <span className="font-bold text-slate-200">{linha.qtd_componente ?? 1}</span></span>
-                            <ActionButtons onEdit={() => { setEditingId(linha.id_3mf); setEditComp(String(linha.id_componente_stl ?? "")); setEditQtd(String(linha.qtd_componente ?? "1")); }}
-                              onDelete={() => handleDeleteLinha(linha.id_3mf)} />
+                            <ActionButtons onEdit={() => { setEditingId(linha.id_linha); setEditComp(String(linha.id_componente_stl ?? "")); setEditQtd(String(linha.qtd_componente ?? "1")); }}
+                              onDelete={() => handleDeleteLinha(linha.id_linha)} />
                           </div>
                         </div>
                       )}
