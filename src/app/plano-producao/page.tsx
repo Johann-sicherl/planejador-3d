@@ -744,7 +744,7 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
               onRegistrarFalhaStls={onRegistrarFalhaStls} onAtualizarProgresso={onAtualizarProgresso}
               finalizacaoEmAndamento={finalizacaoEmAndamento?.idPedido===plano.id_pedido?finalizacaoEmAndamento:null}
               onFinSlotChange={onFinSlotChange} onFinConfirm={onFinConfirm} onFinCancel={onFinCancel}
-              onEdit={onEdit} onDelete={onDelete} />
+              onMover={onMover} onEdit={onEdit} onDelete={onDelete} />
           ))}
         </div>
       </SortableContext>
@@ -752,7 +752,7 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
   );
 }
 
-function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,onEdit,onDelete}:{
+function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,onMover,onEdit,onDelete}:{
   plano:PlanoProducao; nomes:Nomes; options?:OptionsPayload|null; flutuando?:boolean; falhaEmAndamento?:FalhaEmAndamento|null;
   onFalhaChange?:(field:"gramasPerdido"|"tempoPerdido",value:string)=>void;
   onFalhaConfirm?:()=>void; onFalhaCancel?:()=>void;
