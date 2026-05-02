@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "../../../lib/supabase";
+import { supabaseAdmin as supabase } from "../../../lib/supabase";
 
 const TABLE  = "falhas_producao";
 const FIELDS = ["id_execucao","id_3mf","tempo_impressao_min_perdido","quant_mat_perdido"];

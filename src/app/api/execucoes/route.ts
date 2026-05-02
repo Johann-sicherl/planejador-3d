@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "../../../lib/supabase";
+import { supabaseAdmin as supabase } from "../../../lib/supabase";
 
 const TABLE = "execucao_fabric";
 const ID_COL = "id_fila";

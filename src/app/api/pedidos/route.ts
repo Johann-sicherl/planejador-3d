@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "../../../lib/supabase";
+import { supabaseAdmin as supabase } from "../../../lib/supabase";
 
 const TABLE = "cadastro_pedidos";
 const ID_COL = "id_pedido";
@@ -37,16 +37,25 @@ function sanitize(body: Body) {
 }
 
 export async function GET() {
-  const { data, error } = await supabase
+  const { data: rawData, error } = await supabase
     .from(TABLE)
     .select("id_pedido, id_cliente, id_3mf, data_solic, data_entrega_prevista, data_entrega_realizada")
     .order(ID_COL, { ascending: true });
+
+  // Deduplica por id_pedido caso o Supabase expanda FK automaticamente
+  const seen = new Set<number>();
+  const data = (rawData || []).filter((row) => {
+    const id = Number(row.id_pedido);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
 
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, data });
+  return NextResponse.json({ ok: true, data: data });
 }
 
 export async function POST(request: NextRequest) {
