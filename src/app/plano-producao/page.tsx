@@ -364,6 +364,48 @@ export default function PlanoProducaoPage() {
     setFalhaEmAndamento(null);
   }
 
+  // Atualiza progresso baseado nos STLs concluídos
+  async function atualizarProgresso(idPedido: number, novoProgresso: number) {
+    const planoAtual = planos.find((p) => p.id_pedido === idPedido);
+    if (!planoAtual) return;
+    setPlanos((prev) => prev.map((p) => p.id_pedido === idPedido ? { ...p, progresso: novoProgresso } : p));
+    await fetch("/api/plano-producao", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...planoAtual, progresso: novoProgresso }),
+    });
+  }
+
+  // Clona o card para a coluna Falha com apenas os STLs marcados
+  async function registrarFalhaStls(idPedido: number, stlsComFalha: number[], gramasPerdido: string, tempoPerdido: string) {
+    const planoAtual = planos.find((p) => p.id_pedido === idPedido);
+    if (!planoAtual) return;
+    try {
+      setErro(""); setMensagem("");
+      // 1. Atualiza status do plano original para 'falha'
+      const r1 = await fetch("/api/plano-producao", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...planoAtual, status_producao: "falha" }),
+      });
+      const d1 = await r1.json();
+      if (!r1.ok || !d1.ok) throw new Error(d1.error || "Erro ao atualizar plano.");
+      // 2. Grava em falhas_producao para cada STL com falha
+      for (const id3mfLinha of stlsComFalha) {
+        await fetch("/api/falhas", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id_3mf: id3mfLinha,
+            tempo_impressao_min_perdido: tempoPerdido ? Number(tempoPerdido) : null,
+            quant_mat_perdido: gramasPerdido ? Number(gramasPerdido) : null,
+          }),
+        });
+      }
+      setPlanos((prev) => prev.map((p) => p.id_pedido === idPedido ? { ...p, status_producao: "falha" } : p));
+      setMensagem("Falha registrada com sucesso.");
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Erro ao registrar falha.");
+    }
+  }
+
   const total=planos.length;
   const naFila=planos.filter((p)=>(p.status_producao||"pedidos")==="fila").length;
   const produzindo=planos.filter((p)=>(p.status_producao||"pedidos")==="producao").length;
@@ -499,6 +541,8 @@ export default function PlanoProducaoPage() {
                   falhaEmAndamento={falhaEmAndamento}
                   onFalhaChange={(field,value)=>setFalhaEmAndamento((prev)=>prev?{...prev,[field]:value}:null)}
                   onFalhaConfirm={confirmarFalha} onFalhaCancel={cancelarFalha}
+                  onRegistrarFalhaStls={registrarFalhaStls}
+                  onAtualizarProgresso={atualizarProgresso}
                   onEdit={editarPlano} onDelete={excluirPlano} />
               );
             })}
@@ -534,11 +578,13 @@ function Indicador({titulo,valor,subtitulo,vermelho=false}:{titulo:string;valor:
   );
 }
 
-function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onEdit,onDelete}:{
+function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,onEdit,onDelete}:{
   coluna:{id:StatusProducao;titulo:string;subtitulo:string;bordaTopo:string};
   planos:PlanoProducao[]; nomes:Nomes; options:OptionsPayload|null; falhaEmAndamento:FalhaEmAndamento|null;
   onFalhaChange:(field:"gramasPerdido"|"tempoPerdido",value:string)=>void;
   onFalhaConfirm:()=>void; onFalhaCancel:()=>void;
+  onRegistrarFalhaStls:(idPedido:number,stls:number[],gramas:string,tempo:string)=>void;
+  onAtualizarProgresso:(idPedido:number,progresso:number)=>void;
   onEdit:(plano:PlanoProducao)=>void; onDelete:(idPedido:number)=>void;
 }) {
   const {setNodeRef,isOver}=useDroppable({id:coluna.id});
@@ -561,6 +607,7 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
             <CardPlano key={plano.id_pedido} plano={plano} nomes={nomes} options={options}
               falhaEmAndamento={falhaEmAndamento?.idPedido===plano.id_pedido?falhaEmAndamento:null}
               onFalhaChange={onFalhaChange} onFalhaConfirm={onFalhaConfirm} onFalhaCancel={onFalhaCancel}
+              onRegistrarFalhaStls={onRegistrarFalhaStls} onAtualizarProgresso={onAtualizarProgresso}
               onEdit={onEdit} onDelete={onDelete} />
           ))}
         </div>
@@ -569,10 +616,12 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
   );
 }
 
-function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onEdit,onDelete}:{
+function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,onEdit,onDelete}:{
   plano:PlanoProducao; nomes:Nomes; options?:OptionsPayload|null; flutuando?:boolean; falhaEmAndamento?:FalhaEmAndamento|null;
   onFalhaChange?:(field:"gramasPerdido"|"tempoPerdido",value:string)=>void;
   onFalhaConfirm?:()=>void; onFalhaCancel?:()=>void;
+  onRegistrarFalhaStls?:(idPedido:number,stls:number[],gramas:string,tempo:string)=>void;
+  onAtualizarProgresso?:(idPedido:number,progresso:number)=>void;
   onEdit?:(plano:PlanoProducao)=>void; onDelete?:(idPedido:number)=>void;
 }) {
   const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useSortable({id:String(plano.id_pedido)});
@@ -584,6 +633,12 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
 
   // Card começa colapsado; expande ao clicar no chevron
   const [expandido,setExpandido]=useState(false);
+  // Checkboxes de STL (estado local por card)
+  const [stlsConcluidos,   setStlsConcluidos]   = useState<number[]>([]);
+  const [stlsComFalha,     setStlsComFalha]     = useState<number[]>([]);
+  const [mostrarFormFalhaStl, setMostrarFormFalhaStl] = useState(false);
+  const [gramasFalhaStl,   setGramasFalhaStl]   = useState("");
+  const [tempoFalhaStl,    setTempoFalhaStl]    = useState("");
 
   const corPrioridade:Record<string,string>={
     Baixa:"border-emerald-500/30 bg-emerald-500/15 text-emerald-300",
@@ -686,33 +741,107 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                 <Clock className="h-3.5 w-3.5 shrink-0 text-cyan-300"/>
                 <span>{formatTempo(plano.tempo_impressao_min)}</span>
               </div>
-              {/* STLs do 3MF */}
+              {/* STLs com checkboxes de concluido e falha */}
               {plano.id_3mf&&options&&(()=>{
                 const linhas=(options.arquivos3mf||[]).filter((a)=>Number(a.id_3mf)===Number(plano.id_3mf));
                 if(!linhas.length) return null;
                 return (
-                  <div className="mt-1.5 border-t border-white/10 pt-1.5 space-y-1">
+                  <div className="mt-1.5 border-t border-white/10 pt-1.5 space-y-1.5">
                     {linhas.map((a,i)=>{
                       const comp=(options.componentes||[]).find((c)=>Number(c.id_componente_stl)===Number(a.id_componente_stl));
                       const nome=comp?String(comp.nome_componente??comp.nome??a.id_componente_stl):String(a.id_componente_stl??"?");
+                      const lineId=Number(a.id_linha??i);
+                      const isConcluido=stlsConcluidos.includes(lineId);
+                      const isFalhaStl=stlsComFalha.includes(lineId);
                       return (
-                        <div key={i} className="flex items-center justify-between gap-2">
-                          <span className="truncate text-slate-400">{nome}</span>
-                          <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-slate-300">x{String(a.qtd_componente??1)}</span>
+                        <div key={i} className={`flex items-center gap-1.5 rounded-lg px-1.5 py-1 transition-colors ${isConcluido?"bg-emerald-500/10":isFalhaStl?"bg-red-500/10":""}`}>
+                          <input type="checkbox" checked={isConcluido}
+                            onChange={()=>{
+                              const novo=isConcluido?stlsConcluidos.filter(x=>x!==lineId):[...stlsConcluidos,lineId];
+                              setStlsConcluidos(novo);
+                              const pct=Math.round((novo.length/linhas.length)*100);
+                              onAtualizarProgresso?.(plano.id_pedido,Math.min(pct,100));
+                            }}
+                            className="h-3 w-3 accent-emerald-400 shrink-0 cursor-pointer" title="Concluido"/>
+                          <span className={`flex-1 truncate ${isConcluido?"line-through text-slate-600":isFalhaStl?"text-red-400":"text-slate-400"}`}>{nome}</span>
+                          <span className="shrink-0 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-500">x{String(a.qtd_componente??1)}</span>
+                          <input type="checkbox" checked={isFalhaStl}
+                            onChange={()=>setStlsComFalha(isFalhaStl?stlsComFalha.filter(x=>x!==lineId):[...stlsComFalha,lineId])}
+                            className="h-3 w-3 accent-red-400 shrink-0 cursor-pointer" title="Com falha"/>
+                          <AlertTriangle className={`h-3 w-3 shrink-0 ${isFalhaStl?"text-red-400":"text-slate-700"}`}/>
                         </div>
                       );
                     })}
+                    <div className="flex gap-3 pt-0.5 text-[10px] text-slate-600">
+                      <span className="flex items-center gap-1"><span className="text-emerald-400">checkmark</span> Concluido</span>
+                      <span className="flex items-center gap-1 text-red-500">triangle Falha</span>
+                    </div>
                   </div>
                 );
               })()}
             </div>
 
-            {/* Barra de progresso completa */}
-            {!isFalha&&(
-              <div>
-                <div className="mb-1 flex justify-between text-xs text-slate-400"><span>Progresso</span><span>{progresso}%</span></div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-                  <div className="h-full rounded-full bg-cyan-400 transition-all" style={{width:`${Math.min(Math.max(progresso,0),100)}%`}}/>
+            {/* Barra de progresso baseada nos STLs concluidos */}
+            {!isFalha&&(()=>{
+              const linhas=options?(options.arquivos3mf||[]).filter((a)=>Number(a.id_3mf)===Number(plano.id_3mf)):[];
+              const total=linhas.length;
+              const pct=total>0?Math.round((stlsConcluidos.length/total)*100):progresso;
+              return (
+                <div>
+                  <div className="mb-1 flex justify-between text-xs text-slate-400">
+                    <span>Progresso</span>
+                    <span>{total>0?`${Math.min(stlsConcluidos.length,total)}/${total} STLs`:`${progresso}%`}</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                    <div className="h-full rounded-full bg-cyan-400 transition-all" style={{width:`${Math.min(Math.max(total>0?pct:progresso,0),100)}%`}}/>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Botao registrar falha nos STLs marcados */}
+            {!isFalha&&stlsComFalha.length>0&&!mostrarFormFalhaStl&&(
+              <button type="button"
+                onClick={()=>setMostrarFormFalhaStl(true)}
+                className="w-full rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-bold text-red-300 hover:bg-red-500/20 flex items-center justify-center gap-1.5">
+                <AlertTriangle className="h-3 w-3"/>
+                Registrar falha em {stlsComFalha.length} STL{stlsComFalha.length>1?"s":""}
+              </button>
+            )}
+
+            {/* Form de falha por STL */}
+            {mostrarFormFalhaStl&&(
+              <div className="rounded-xl border border-red-500/40 bg-black/40 p-3 space-y-2">
+                <p className="text-xs font-black text-red-300 flex items-center gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5"/> Registrar falha nos STLs marcados
+                </p>
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-red-300/80">Material perdido (g) *</label>
+                  <input type="number" min="0" step="0.1" value={gramasFalhaStl}
+                    onChange={(e)=>setGramasFalhaStl(e.target.value)} placeholder="Ex.: 45.5"
+                    className="w-full rounded-lg border border-red-500/30 bg-slate-950/80 px-3 py-1.5 text-xs text-white outline-none focus:border-red-400 placeholder:text-slate-600"/>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-red-300/80">Tempo perdido (min) *</label>
+                  <input type="number" min="0" value={tempoFalhaStl}
+                    onChange={(e)=>setTempoFalhaStl(e.target.value)} placeholder="Ex.: 120"
+                    className="w-full rounded-lg border border-red-500/30 bg-slate-950/80 px-3 py-1.5 text-xs text-white outline-none focus:border-red-400 placeholder:text-slate-600"/>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button type="button"
+                    disabled={!gramasFalhaStl||!tempoFalhaStl}
+                    onClick={()=>{
+                      onRegistrarFalhaStls?.(plano.id_pedido,stlsComFalha,gramasFalhaStl,tempoFalhaStl);
+                      setMostrarFormFalhaStl(false);
+                      setGramasFalhaStl(""); setTempoFalhaStl(""); setStlsComFalha([]);
+                    }}
+                    className="flex-1 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-black text-white hover:bg-red-400 disabled:opacity-50">
+                    Confirmar falha
+                  </button>
+                  <button type="button" onClick={()=>setMostrarFormFalhaStl(false)}
+                    className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/10">
+                    Cancelar
+                  </button>
                 </div>
               </div>
             )}
