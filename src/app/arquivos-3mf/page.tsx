@@ -1,165 +1,261 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { ActionButtons, Feedback, getJson, LoadingOrEmpty, NumberOrBlank, PageShell, useAuthGuard, useCrudList } from "../_shared";
+import { useEffect, useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
+import {
+  ActionButtons,
+  Feedback,
+  GlassCard,
+  LoadingOrEmpty,
+  PageShell,
+  useAuthGuard,
+  useCrudList,
+} from "../_shared";
 
-type Registro = Record<string, string | number | null>;
+type LinhaDB = {
+  id_3mf: number;
+  nome_arquivo_3mf: string | null;
+  id_componente_stl: number | null;
+  qtd_componente: number | null;
+};
+
+type Componente = {
+  id_componente_stl: number;
+  nome_componente: string;
+};
+
+type Arquivo3mf = { nome: string; linhas: LinhaDB[] };
+
+function agrupar(linhas: LinhaDB[]): Arquivo3mf[] {
+  const map = new Map<string, LinhaDB[]>();
+  for (const l of linhas) {
+    const nome = l.nome_arquivo_3mf ?? "(sem nome)";
+    if (!map.has(nome)) map.set(nome, []);
+    map.get(nome)!.push(l);
+  }
+  return [...map.entries()].map(([nome, ls]) => ({ nome, linhas: ls }));
+}
+
+const FIELD = "w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none focus:border-cyan-400";
 
 export default function Page() {
   const { ready } = useAuthGuard();
-  const { data, loading, erro, setErro, reload } = useCrudList<Registro>("/api/arquivos-3mf");
-  const [options, setOptions] = useState<any>(null);
-  const [salvando, setSalvando] = useState(false);
-  const [mensagem, setMensagem] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [nome_arquivo_3mf, setNome_arquivo_3mf] = useState("");
-  const [id_componente_stl, setId_componente_stl] = useState("");
-  const [qtd_componente, setQtd_componente] = useState("");
+  const { data, loading, erro, setErro, reload } = useCrudList<LinhaDB>("/api/arquivos-3mf");
+  const [componentes, setComponentes] = useState<Componente[]>([]);
+  const [salvando,    setSalvando]    = useState(false);
+  const [mensagem,    setMensagem]    = useState("");
+
+  const [nomeArquivo, setNomeArquivo] = useState("");
+  const [slots, setSlots] = useState<{ id_componente_stl: string; qtd: string }[]>([
+    { id_componente_stl: "", qtd: "1" },
+  ]);
+
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editComp,  setEditComp]  = useState("");
+  const [editQtd,   setEditQtd]   = useState("");
 
   useEffect(() => {
-getJson<any>("/api/options").then((r) => setOptions(r[0] || null)).catch(() => {});
+    fetch("/api/options", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((res) => {
+        const comps: Componente[] = (res.data?.[0]?.componentes || []).map((c: Record<string, unknown>) => ({
+          id_componente_stl: Number(c.id_componente_stl),
+          nome_componente:   String(c.nome_componente ?? c.nome ?? c.id_componente_stl),
+        }));
+        setComponentes(comps);
+      })
+      .catch(() => {});
   }, []);
 
-  function resetForm() {
-    setEditingId(null);
-    setNome_arquivo_3mf("");
-    setId_componente_stl("");
-    setQtd_componente("");
+  function addSlot() { setSlots((p) => [...p, { id_componente_stl: "", qtd: "1" }]); }
+  function removeSlot(i: number) { setSlots((p) => p.filter((_, j) => j !== i)); }
+  function updateSlot(i: number, f: "id_componente_stl" | "qtd", v: string) {
+    setSlots((p) => p.map((s, j) => j === i ? { ...s, [f]: v } : s));
   }
+  function resetForm() { setNomeArquivo(""); setSlots([{ id_componente_stl: "", qtd: "1" }]); setEditingId(null); }
 
-  function fillForEdit(row: Registro) {
-    setEditingId(String(row["id_3mf"] ?? ""));
-    setNome_arquivo_3mf(String(row["nome_arquivo_3mf"] ?? ""));
-    setId_componente_stl(String(row["id_componente_stl"] ?? ""));
-    setQtd_componente(String(row["qtd_componente"] ?? ""));
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  async function handleDelete(id: string) {
-    if (!confirm("Deseja realmente excluir este registro?")) return;
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!nomeArquivo.trim()) { setErro("Informe o nome do arquivo 3MF."); return; }
+    const validos = slots.filter((s) => s.id_componente_stl !== "");
+    if (!validos.length) { setErro("Adicione ao menos 1 componente STL."); return; }
     try {
-      setErro("");
-      setMensagem("");
-      const response = await fetch("/api/arquivos-3mf?id=" + id, { method: "DELETE" });
-      const result = await response.json();
-      if (!response.ok || !result.ok) throw new Error(result.error || "Erro ao excluir.");
-      setMensagem("Registro excluído com sucesso.");
-      if (editingId === id) resetForm();
-      await reload();
-    } catch (err) {
-      setErro(err instanceof Error ? err.message : "Erro ao excluir.");
-    }
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    try {
-      setSalvando(true);
-      setErro("");
-      setMensagem("");
-
-      const payload: Record<string, unknown> = {
-        nome_arquivo_3mf: nome_arquivo_3mf || null,
-        id_componente_stl: id_componente_stl === "" ? null : Number(id_componente_stl),
-        qtd_componente: NumberOrBlank(qtd_componente),
-      };
-
-      const method = editingId ? "PUT" : "POST";
-      if (editingId) payload["id_3mf"] = Number(editingId);
-
-      const response = await fetch("/api/arquivos-3mf", {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+      setSalvando(true); setErro(""); setMensagem("");
+      const res = await fetch("/api/arquivos-3mf", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nome_arquivo_3mf: nomeArquivo.trim(),
+          componentes: validos.map((s) => ({ id_componente_stl: Number(s.id_componente_stl), qtd_componente: Number(s.qtd) || 1 })),
+        }),
       });
-      const result = await response.json();
-      if (!response.ok || !result.ok) throw new Error(result.error || "Erro ao salvar.");
-      setMensagem(editingId ? "Registro atualizado com sucesso." : "Registro salvo com sucesso.");
-      resetForm();
-      await reload();
-    } catch (err) {
-      setErro(err instanceof Error ? err.message : "Erro ao salvar.");
-    } finally {
-      setSalvando(false);
-    }
+      const r = await res.json();
+      if (!res.ok || !r.ok) throw new Error(r.error || "Erro ao salvar.");
+      setMensagem("Arquivo 3MF salvo com sucesso."); resetForm(); await reload();
+    } catch (err) { setErro(err instanceof Error ? err.message : "Erro."); }
+    finally { setSalvando(false); }
   }
 
-  if (!ready) return <main className="min-h-screen p-8">Carregando...</main>;
+  async function handleDeleteArquivo(nome: string) {
+    if (!confirm(`Excluir o arquivo "${nome}" e todos os seus componentes?`)) return;
+    try {
+      setErro(""); setMensagem("");
+      const res = await fetch("/api/arquivos-3mf?nome=" + encodeURIComponent(nome), { method: "DELETE" });
+      const r = await res.json();
+      if (!res.ok || !r.ok) throw new Error(r.error || "Erro ao excluir.");
+      setMensagem("Arquivo excluído."); await reload();
+    } catch (err) { setErro(err instanceof Error ? err.message : "Erro."); }
+  }
+
+  async function handleDeleteLinha(id: number) {
+    if (!confirm("Remover este componente do arquivo?")) return;
+    try {
+      setErro(""); setMensagem("");
+      const res = await fetch("/api/arquivos-3mf?id=" + id, { method: "DELETE" });
+      const r = await res.json();
+      if (!res.ok || !r.ok) throw new Error(r.error || "Erro ao excluir.");
+      setMensagem("Componente removido."); await reload();
+    } catch (err) { setErro(err instanceof Error ? err.message : "Erro."); }
+  }
+
+  async function saveEditLinha() {
+    if (!editingId) return;
+    try {
+      setSalvando(true); setErro(""); setMensagem("");
+      const res = await fetch("/api/arquivos-3mf", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_3mf: editingId, id_componente_stl: editComp ? Number(editComp) : null, qtd_componente: editQtd ? Number(editQtd) : null }),
+      });
+      const r = await res.json();
+      if (!res.ok || !r.ok) throw new Error(r.error || "Erro ao atualizar.");
+      setMensagem("Componente atualizado."); setEditingId(null); await reload();
+    } catch (err) { setErro(err instanceof Error ? err.message : "Erro."); }
+    finally { setSalvando(false); }
+  }
+
+  if (!ready) return <main className="min-h-screen p-8 text-slate-100">Carregando...</main>;
+
+  const arquivos = agrupar(data);
 
   return (
-    <PageShell title="Arquivos 3MF" description="Cadastro de arquivos 3MF.">
-      <div className="grid gap-6 xl:grid-cols-[520px_1fr]">
-        <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <h2 className="text-xl font-semibold text-black">{editingId ? "Editar registro" : "Novo registro"}</h2>
-          <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-black">Nome do arquivo 3MF</label>
-              <input type="text" value={nome_arquivo_3mf} onChange={(e) => setNome_arquivo_3mf(e.target.value)} className="w-full rounded-xl border border-zinc-300 px-3 py-2 text-black outline-none focus:border-zinc-500" placeholder="Nome do arquivo 3MF" />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-black">Componente STL</label>
-              <select value={id_componente_stl} onChange={(e) => setId_componente_stl(e.target.value)} className="w-full rounded-xl border border-zinc-300 px-3 py-2 text-black outline-none focus:border-zinc-500">
-                <option value="">Selecione</option>
-                {(options?.componentes || []).map((item: any) => (
-                  <option key={String(item[Object.keys(item)[0]])} value={String(item[Object.keys(item)[0]])}>
-                    {String(item[Object.keys(item)[0]])} - {String(item[Object.keys(item)[1]] ?? item[Object.keys(item)[0]])}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-black">Quantidade do componente</label>
-              <input type="number" value={qtd_componente} onChange={(e) => setQtd_componente(e.target.value)} className="w-full rounded-xl border border-zinc-300 px-3 py-2 text-black outline-none focus:border-zinc-500" placeholder="Quantidade do componente" />
-            </div>
-            <Feedback erro={erro} mensagem={mensagem} />
-            <div className="flex gap-2">
-              <button type="submit" disabled={salvando} className="flex-1 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60">
-                {salvando ? "Salvando..." : editingId ? "Atualizar" : "Salvar"}
-              </button>
-              {editingId && (
-                <button type="button" onClick={resetForm} className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-medium text-black hover:bg-zinc-50">
-                  Cancelar
-                </button>
-              )}
-            </div>
-          </form>
-        </section>
+    <PageShell title="Arquivos 3MF" description="Cadastre o arquivo 3MF e todos os componentes STL que ele contém.">
+      <Feedback erro={erro} mensagem={mensagem} />
 
-        <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
-            <h2 className="text-xl font-semibold text-black">Lista</h2>
-            <button onClick={reload} className="rounded-xl border border-zinc-300 px-3 py-2 text-sm font-medium text-black hover:bg-zinc-50">
-              Atualizar
+      <GlassCard>
+        <h2 className="mb-5 text-xl font-black text-white">Novo arquivo 3MF</h2>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="mb-2 block text-sm font-bold text-slate-300">Nome do arquivo 3MF *</label>
+            <input value={nomeArquivo} onChange={(e) => setNomeArquivo(e.target.value)}
+              className={FIELD} placeholder="Ex.: MONTAGEM CAIXA ORGANIZADORA.3mf" required />
+          </div>
+
+          <div>
+            <div className="mb-3 flex items-center justify-between">
+              <label className="text-sm font-bold text-slate-300">Componentes STL *</label>
+              <button type="button" onClick={addSlot}
+                className="flex items-center gap-1 rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-bold text-cyan-300 hover:bg-cyan-400/20">
+                <Plus className="h-3.5 w-3.5" /> Adicionar componente
+              </button>
+            </div>
+            <div className="space-y-2">
+              {slots.map((slot, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <select value={slot.id_componente_stl} onChange={(e) => updateSlot(idx, "id_componente_stl", e.target.value)} className={FIELD}>
+                    <option value="">Selecione o componente STL</option>
+                    {componentes.map((c) => (
+                      <option key={c.id_componente_stl} value={c.id_componente_stl}>{c.nome_componente}</option>
+                    ))}
+                  </select>
+                  <input type="number" min="1" value={slot.qtd} onChange={(e) => updateSlot(idx, "qtd", e.target.value)}
+                    className="w-24 shrink-0 rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-3 text-slate-100 outline-none focus:border-cyan-400"
+                    placeholder="Qtd" />
+                  {slots.length > 1 && (
+                    <button type="button" onClick={() => removeSlot(idx)}
+                      className="shrink-0 rounded-xl border border-red-500/30 bg-red-500/10 p-2.5 text-red-300 hover:bg-red-500/20">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <button type="submit" disabled={salvando}
+              className="rounded-2xl bg-cyan-400 px-6 py-3 text-sm font-black text-slate-950 hover:bg-cyan-300 disabled:opacity-60">
+              {salvando ? "Salvando..." : "Salvar arquivo 3MF"}
+            </button>
+            <button type="button" onClick={resetForm}
+              className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-slate-300 hover:bg-white/10">
+              Limpar
             </button>
           </div>
-          <div className="mt-4 overflow-x-auto">
-            <LoadingOrEmpty loading={loading} empty={data.length === 0} loadingText="Carregando registros..." emptyText="Nenhum registro cadastrado.">
-              <table className="min-w-full border-separate border-spacing-0 text-sm">
-                <thead>
-                  <tr>
-                    <th className="border-b border-zinc-200 px-3 py-3 text-left font-semibold text-black">Nome do arquivo 3MF</th>
-                    <th className="border-b border-zinc-200 px-3 py-3 text-left font-semibold text-black">Componente STL</th>
-                    <th className="border-b border-zinc-200 px-3 py-3 text-left font-semibold text-black">Quantidade do componente</th>
-                    <th className="border-b border-zinc-200 px-3 py-3 text-left font-semibold text-black">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.map((row, index) => (
-                    <tr key={String(index)}>
-                      <td className="border-b border-zinc-100 px-3 py-3 text-black">{row["nome_arquivo_3mf"] ?? ""}</td>
-                      <td className="border-b border-zinc-100 px-3 py-3 text-black">{row["id_componente_stl"] ?? ""}</td>
-                      <td className="border-b border-zinc-100 px-3 py-3 text-black">{row["qtd_componente"] ?? ""}</td>
-                      <td className="border-b border-zinc-100 px-3 py-3 text-black">
-                        <ActionButtons onEdit={() => fillForEdit(row)} onDelete={() => handleDelete(String(row["id_3mf"] ?? ""))} />
-                      </td>
-                    </tr>
+        </form>
+      </GlassCard>
+
+      <GlassCard>
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-xl font-black text-white">Arquivos cadastrados</h2>
+          <button type="button" onClick={reload}
+            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-white/10">
+            Atualizar
+          </button>
+        </div>
+
+        <LoadingOrEmpty loading={loading} empty={arquivos.length === 0}
+          loadingText="Carregando arquivos..." emptyText="Nenhum arquivo 3MF cadastrado.">
+          <div className="space-y-4">
+            {arquivos.map((arq) => (
+              <div key={arq.nome} className="rounded-2xl border border-white/10 bg-white/[0.03]">
+                <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+                  <span className="font-black text-white">{arq.nome}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-white/10 px-3 py-0.5 text-xs text-slate-400">
+                      {arq.linhas.length} componente{arq.linhas.length !== 1 ? "s" : ""}
+                    </span>
+                    <button type="button" onClick={() => handleDeleteArquivo(arq.nome)}
+                      className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-bold text-red-300 hover:bg-red-500/20">
+                      Excluir arquivo
+                    </button>
+                  </div>
+                </div>
+                <div className="divide-y divide-white/5">
+                  {arq.linhas.map((linha) => (
+                    <div key={linha.id_3mf} className="px-4 py-3">
+                      {editingId === linha.id_3mf ? (
+                        <div className="flex items-center gap-2">
+                          <select value={editComp} onChange={(e) => setEditComp(e.target.value)}
+                            className="flex-1 rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400">
+                            <option value="">Selecione</option>
+                            {componentes.map((c) => (
+                              <option key={c.id_componente_stl} value={c.id_componente_stl}>{c.nome_componente}</option>
+                            ))}
+                          </select>
+                          <input type="number" min="1" value={editQtd} onChange={(e) => setEditQtd(e.target.value)}
+                            className="w-20 rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400" />
+                          <button type="button" onClick={saveEditLinha} disabled={salvando}
+                            className="rounded-xl bg-cyan-400 px-3 py-2 text-xs font-black text-slate-950 hover:bg-cyan-300">Salvar</button>
+                          <button type="button" onClick={() => setEditingId(null)}
+                            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-300 hover:bg-white/10">Cancelar</button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-3 text-sm text-slate-300">
+                          <span>{componentes.find((c) => c.id_componente_stl === linha.id_componente_stl)?.nome_componente ?? `Componente ${linha.id_componente_stl}`}</span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-slate-500">Qtd: <span className="font-bold text-slate-200">{linha.qtd_componente ?? 1}</span></span>
+                            <ActionButtons onEdit={() => { setEditingId(linha.id_3mf); setEditComp(String(linha.id_componente_stl ?? "")); setEditQtd(String(linha.qtd_componente ?? "1")); }}
+                              onDelete={() => handleDeleteLinha(linha.id_3mf)} />
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </LoadingOrEmpty>
+                </div>
+              </div>
+            ))}
           </div>
-        </section>
-      </div>
+        </LoadingOrEmpty>
+      </GlassCard>
     </PageShell>
   );
 }
