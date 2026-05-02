@@ -35,6 +35,8 @@ const FIELD_CLASS =
   "w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none focus:border-cyan-400";
 
 // ── Componente FiltroColuna (dropdown estilo Excel) ─────────────────────────
+// Estado LOCAL no dropdown — sobe para o pai somente ao clicar OK ou fechar.
+// Isso elimina o race condition de re-render causado por onChange imediato.
 function FiltroColuna({
   label,
   opcoes,
@@ -48,57 +50,64 @@ function FiltroColuna({
 }) {
   const [aberto, setAberto] = useState(false);
   const [busca,  setBusca]  = useState("");
+  // local = o que está marcado DENTRO do dropdown (não afeta a tabela até fechar)
+  const [local,  setLocal]  = useState<Set<string>>(new Set(opcoes));
   const ref = useRef<HTMLDivElement>(null);
-  const ativo = selecionados.size > 0 && selecionados.size < opcoes.length;
 
-  // Fecha ao clicar fora
+  // Quando as opcoes chegam do banco (após carregamento), reinicia local
+  const opcoesKey = opcoes.join("|");
+  useEffect(() => {
+    setLocal(new Set(opcoes));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opcoesKey]);
+
+  // Aplica o filtro (sobe para o pai)
+  function aplicar(conjunto: Set<string>) {
+    // Se tudo marcado = sem filtro ativo = Set vazio para o pai
+    const todosMarcados = conjunto.size === opcoes.length;
+    onChange(todosMarcados ? new Set() : new Set(conjunto));
+    setAberto(false);
+    setBusca("");
+  }
+
+  // Fecha ao clicar fora → aplica o que estava local
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setAberto(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        aplicar(local);
+      }
     }
-    document.addEventListener("mousedown", handler);
+    if (aberto) document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aberto, local, opcoesKey]);
+
+  function abrirDropdown() {
+    // Ao abrir: sincroniza local com estado atual do pai
+    if (selecionados.size === 0) setLocal(new Set(opcoes));
+    else setLocal(new Set(selecionados));
+    setAberto(true);
+  }
+
+  function toggleItem(valor: string) {
+    setLocal((prev) => {
+      const novo = new Set(prev);
+      if (novo.has(valor)) novo.delete(valor);
+      else novo.add(valor);
+      return novo;
+    });
+  }
 
   const opcoesFiltradas = opcoes.filter((o) =>
     o.toLowerCase().includes(busca.toLowerCase())
   );
 
-  // Ao abrir: se Set vazio (sem filtro), inicializa com TODOS marcados
-  // para que o usuário veja tudo marcado e possa desmarcar o que não quer
-  function handleAbrir() {
-    if (!aberto && selecionados.size === 0 && opcoes.length > 0) {
-      onChange(new Set(opcoes));
-    }
-    setAberto((v) => !v);
-  }
-
-  function toggleItem(valor: string) {
-    const novo = new Set(selecionados);
-    if (novo.has(valor)) novo.delete(valor);
-    else novo.add(valor);
-    // Se ficou igual a todos, volta para Set vazio (sem filtro ativo)
-    if (novo.size === opcoes.length) onChange(new Set());
-    else onChange(novo);
-  }
-
-  function selecionarTodos() {
-    onChange(new Set()); // Set vazio = todos visíveis
-    setBusca("");
-  }
-
-  function limpar() {
-    // Desmarca tudo = filtra para mostrar nada (Set com string impossível)
-    // Na prática não faz sentido "mostrar nada", então limpar = mostrar tudo
-    onChange(new Set());
-    setBusca("");
-    setAberto(false);
-  }
+  const ativo = selecionados.size > 0 && selecionados.size < opcoes.length;
 
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={handleAbrir}
+        onClick={() => aberto ? aplicar(local) : abrirDropdown()}
         className={`flex w-full items-center justify-between gap-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-colors ${
           ativo
             ? "border border-cyan-400/50 bg-cyan-400/10 text-cyan-300"
@@ -108,13 +117,13 @@ function FiltroColuna({
         <span className="flex items-center gap-1 truncate">
           {ativo && <Filter className="h-3 w-3 shrink-0" />}
           {label}
+          {ativo && <span className="ml-1 rounded-full bg-cyan-400 px-1.5 text-[10px] text-slate-950">{selecionados.size}</span>}
         </span>
         <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${aberto ? "rotate-180" : ""}`} />
       </button>
 
       {aberto && (
         <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-2xl border border-white/15 bg-slate-900 shadow-2xl shadow-black/50">
-          {/* Busca interna */}
           <div className="border-b border-white/10 p-2">
             <input
               autoFocus
@@ -125,43 +134,38 @@ function FiltroColuna({
             />
           </div>
 
-          {/* Ações rápidas */}
           <div className="flex gap-1 border-b border-white/10 px-2 py-1.5">
-            <button
-              onClick={selecionarTodos}
-              className="flex-1 rounded-lg bg-white/5 px-2 py-1 text-xs font-bold text-slate-300 hover:bg-white/10"
-            >
+            <button onClick={() => setLocal(new Set(opcoes))}
+              className="flex-1 rounded-lg bg-white/5 px-2 py-1 text-xs font-bold text-slate-300 hover:bg-white/10">
               Todos
             </button>
-            <button
-              onClick={limpar}
-              className="flex-1 rounded-lg bg-white/5 px-2 py-1 text-xs font-bold text-slate-300 hover:bg-white/10"
-            >
-              Limpar
+            <button onClick={() => setLocal(new Set())}
+              className="flex-1 rounded-lg bg-white/5 px-2 py-1 text-xs font-bold text-slate-300 hover:bg-white/10">
+              Nenhum
+            </button>
+            <button onClick={() => aplicar(local)}
+              className="flex-1 rounded-lg bg-cyan-400/20 px-2 py-1 text-xs font-black text-cyan-300 hover:bg-cyan-400/30">
+              OK
             </button>
           </div>
 
-          {/* Lista com checkboxes */}
           <ul className="max-h-48 overflow-y-auto p-1">
             {opcoesFiltradas.length === 0 && (
               <li className="px-3 py-2 text-xs text-slate-500">Nenhum resultado</li>
             )}
-            {opcoesFiltradas.map((opcao) => {
-              const marcado = selecionados.size === 0 || selecionados.has(opcao);
-              return (
-                <li key={opcao}>
-                  <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-200 hover:bg-white/10">
-                    <input
-                      type="checkbox"
-                      checked={marcado}
-                      onChange={() => toggleItem(opcao)}
-                      className="h-3.5 w-3.5 accent-cyan-400"
-                    />
-                    <span className="truncate">{opcao || "(vazio)"}</span>
-                  </label>
-                </li>
-              );
-            })}
+            {opcoesFiltradas.map((opcao) => (
+              <li key={opcao}>
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-200 hover:bg-white/10">
+                  <input
+                    type="checkbox"
+                    checked={local.has(opcao)}
+                    onChange={() => toggleItem(opcao)}
+                    className="h-3.5 w-3.5 accent-cyan-400"
+                  />
+                  <span className="truncate">{opcao || "(vazio)"}</span>
+                </label>
+              </li>
+            ))}
           </ul>
         </div>
       )}
