@@ -48,32 +48,54 @@ function FiltroColuna({
 }) {
   const [aberto, setAberto] = useState(false);
   const [busca,  setBusca]  = useState("");
-  const [marcados, setMarcados] = useState<string[]>([]);
   const ref = useRef<HTMLDivElement>(null);
 
-  function abrir() {
-    // Ao abrir: se sem filtro ativo, marca todos; senão, usa os selecionados
-    setMarcados(selecionados.length === 0 ? [...opcoes] : [...selecionados]);
-    setBusca("");
-    setAberto(true);
-  }
+  useEffect(() => {
+    if (!aberto) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setAberto(false);
+        setBusca("");
+      }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [aberto]);
 
-  function fechar() {
-    setAberto(false);
-    setBusca("");
-  }
-
-  function confirmar() {
-    // Se tudo marcado = sem filtro = array vazio
-    onChange(marcados.length === opcoes.length ? [] : [...marcados]);
-    fechar();
-  }
-
+  // selecionados = quem está VISÍVEL na tabela
+  // array vazio = todos visíveis (sem filtro ativo)
+  //
+  // UX igual ao Excel:
+  // - Todos marcados inicialmente
+  // - Clicar num item quando todos estão marcados = ISOLAR (mostrar só esse)
+  // - Clicar num item já isolado = volta a mostrar todos
+  // - Marcar/desmarcar individualmente nos demais casos
   function toggle(valor: string) {
-    setMarcados((prev) =>
-      prev.includes(valor) ? prev.filter((v) => v !== valor) : [...prev, valor]
-    );
+    const todosMarcados = selecionados.length === 0;
+    const apenasEsteMarcado = selecionados.length === 1 && selecionados[0] === valor;
+
+    if (todosMarcados) {
+      // Clicar quando todos visíveis = ISOLAR esse item
+      onChange([valor]);
+      return;
+    }
+    if (apenasEsteMarcado) {
+      // Clicar no único marcado = volta a mostrar todos
+      onChange([]);
+      return;
+    }
+    const jaEsta = selecionados.includes(valor);
+    const novo = jaEsta
+      ? selecionados.filter((v) => v !== valor)
+      : [...selecionados, valor];
+    onChange(novo.length === opcoes.length ? [] : novo);
   }
+
+  function marcarTodos()    { onChange([]); }
+  function desmarcarTodos() { onChange([]); }  // reseta filtro
+
+  const estaVisivel = (opcao: string) =>
+    selecionados.length === 0 || selecionados.includes(opcao);
 
   const opcoesFiltradas = opcoes.filter((o) =>
     o.toLowerCase().includes(busca.toLowerCase())
@@ -81,20 +103,10 @@ function FiltroColuna({
 
   const ativo = selecionados.length > 0 && selecionados.length < opcoes.length;
 
-  // Fecha ao clicar fora sem aplicar
-  useEffect(() => {
-    if (!aberto) return;
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) fechar();
-    }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [aberto]);
-
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={aberto ? fechar : abrir}
+        onClick={() => { setAberto((v) => !v); setBusca(""); }}
         className={`flex w-full items-center justify-between gap-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-colors ${
           ativo
             ? "border border-cyan-400/50 bg-cyan-400/10 text-cyan-300"
@@ -124,22 +136,16 @@ function FiltroColuna({
               className="w-full rounded-lg border border-white/10 bg-slate-950/80 px-2 py-1.5 text-xs text-white outline-none focus:border-cyan-400 placeholder:text-slate-600"
             />
           </div>
-
           <div className="flex gap-1 border-b border-white/10 px-2 py-1.5">
-            <button onClick={() => setMarcados([...opcoes])}
+            <button onClick={marcarTodos}
               className="flex-1 rounded-lg bg-white/5 px-2 py-1 text-xs font-bold text-slate-300 hover:bg-white/10">
               Todos
             </button>
-            <button onClick={() => setMarcados([])}
+            <button onClick={desmarcarTodos}
               className="flex-1 rounded-lg bg-white/5 px-2 py-1 text-xs font-bold text-slate-300 hover:bg-white/10">
               Nenhum
             </button>
-            <button onClick={confirmar}
-              className="flex-1 rounded-lg bg-cyan-400/20 px-2 py-1 text-xs font-black text-cyan-300 hover:bg-cyan-400/30">
-              OK
-            </button>
           </div>
-
           <ul className="max-h-48 overflow-y-auto p-1">
             {opcoesFiltradas.length === 0 && (
               <li className="px-3 py-2 text-xs text-slate-500">Nenhum resultado</li>
@@ -149,7 +155,7 @@ function FiltroColuna({
                 <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-200 hover:bg-white/10">
                   <input
                     type="checkbox"
-                    checked={marcados.includes(opcao)}
+                    checked={estaVisivel(opcao)}
                     onChange={() => toggle(opcao)}
                     className="h-3.5 w-3.5 accent-cyan-400"
                   />
@@ -163,6 +169,7 @@ function FiltroColuna({
     </div>
   );
 }
+
 
 // ── Página principal ─────────────────────────────────────────────────────────
 export default function Page() {
