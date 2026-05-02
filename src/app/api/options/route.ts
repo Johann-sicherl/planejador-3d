@@ -59,7 +59,7 @@ export async function GET() {
       supabase.from("cadastro_clientes").select("*").order("id_cliente", { ascending: true }),
       supabase.from("cadastro_impressoras").select("*").order("id_impressora", { ascending: true }),
       supabase.from("cadastro_componentes").select("*").order("id_componente_stl", { ascending: true }),
-      supabase.from("cadastro_3mf").select("*").order("id_3mf", { ascending: true }),
+      supabase.from("cadastro_3mf").select("id_3mf, nome_arquivo_3mf").order("id_3mf", { ascending: true }),
       supabase.from("cadastro_filamentos").select("*").order("id_filamento", { ascending: true }),
       supabase.from("cadastro_fabricantes_filamentos").select("*").order("nome_fabricante", { ascending: true }),
       supabase.from("cadastro_pedidos").select("*").order("id_pedido", { ascending: true }),
@@ -87,7 +87,14 @@ export async function GET() {
 
     const clientesData = safeData(clientes);
     const impressorasData = safeData(impressoras);
-    const arquivos3mfData = safeData(arquivos3mf);
+    // Deduplica por id_3mf — cadastro_3mf tem 1 linha por componente STL
+    const arquivos3mfRaw = safeData(arquivos3mf);
+    const arquivos3mfMap = new Map<number, typeof arquivos3mfRaw[0]>();
+    for (const row of arquivos3mfRaw) {
+      const id = Number(row.id_3mf);
+      if (!arquivos3mfMap.has(id)) arquivos3mfMap.set(id, row);
+    }
+    const arquivos3mfData = [...arquivos3mfMap.values()];
     const pedidosData = safeData(pedidos);
     const filamentosData = safeData(filamentos);
     const fabricantesFilamentosData = fabricantesFilamentos.error ? [] : safeData(fabricantesFilamentos);
