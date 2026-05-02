@@ -288,6 +288,7 @@ export default function Page() {
               <thead>
                 <tr className="text-left text-xs uppercase tracking-widest text-slate-400">
                   <th className="px-4 py-2">Filamento</th>
+                  <th className="px-4 py-2">Cor</th>
                   <th className="px-4 py-2">Localizacao</th>
                   <th className="px-4 py-2">Marca carretel</th>
                   <th className="px-4 py-2">Peso c/ carretel (g)</th>
@@ -308,6 +309,7 @@ export default function Page() {
                       <td className="rounded-l-2xl px-4 py-3 font-bold text-white">
                         {filamentos.find((f) => f.id_filamento === row.id_filamento)?.nome_filamento ?? String(row.id_filamento ?? "-")}
                       </td>
+                      <td className="px-4 py-3 text-slate-300">{filamentos.find((f) => f.id_filamento === row.id_filamento)?.cor_filamento || "-"}</td>
                       <td className="px-4 py-3 text-slate-400">{row.localizacao || "-"}</td>
                       <td className="px-4 py-3">{row.carretel?.marca_carretel || "-"}</td>
                       <td className="px-4 py-3">{bruto != null ? `${bruto} g` : "-"}</td>
