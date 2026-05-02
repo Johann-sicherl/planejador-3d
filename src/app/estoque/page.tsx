@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import {
   ActionButtons,
   Feedback,
@@ -11,7 +11,7 @@ import {
   useAuthGuard,
   useCrudList,
 } from "../_shared";
-import { ChevronDown, Filter, X } from "lucide-react";
+import { Filter, X } from "lucide-react";
 
 type Filamento = { id_filamento: number; nome_filamento: string; material_filamento: string | null; cor_filamento: string | null };
 type Carretel  = { id_carretel: number; marca_carretel: string; peso_carretel_g: number };
@@ -34,11 +34,9 @@ type RegistroCarretel = {
 const FIELD_CLASS =
   "w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none focus:border-cyan-400";
 
-// ── Componente FiltroColuna (dropdown estilo Excel) ─────────────────────────
-// selecionados = array de valores VISÍVEIS. Vazio = todos visíveis.
-// Clicar num item quando tudo visível = isola aquele item.
-// Clicar num item isolado = volta a mostrar tudo.
-// Botão OK aplica. Botão Todos remove o filtro.
+// ── Componente FiltroColuna — select múltiplo nativo ────────────────────────
+// Sem estado interno. O pai controla tudo.
+// selecionados vazio = sem filtro = todos visíveis.
 function FiltroColuna({
   label,
   opcoes,
@@ -50,128 +48,37 @@ function FiltroColuna({
   selecionados: string[];
   onChange: (novo: string[]) => void;
 }) {
-  const [aberto,  setAberto] = useState(false);
-  const [busca,   setBusca]  = useState("");
-  // rascunho = estado interno do dropdown enquanto aberto
-  const [rascunho, setRascunho] = useState<string[]>([]);
-  const ref = useRef<HTMLDivElement>(null);
-
-  // Ao abrir: inicializa rascunho com o estado atual do pai
-  function abrir() {
-    setRascunho(selecionados.length === 0 ? [...opcoes] : [...selecionados]);
-    setBusca("");
-    setAberto(true);
-  }
-
-  function fechar() {
-    setAberto(false);
-    setBusca("");
-  }
-
-  // OK: confirma rascunho para o pai
-  function confirmar() {
-    const tudo = rascunho.length === opcoes.length;
-    onChange(tudo ? [] : [...rascunho]);
-    fechar();
-  }
-
-  // Fecha ao clicar fora sem aplicar
-  useEffect(() => {
-    if (!aberto) return;
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) fechar();
-    }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [aberto]);
-
-  function toggleRascunho(valor: string) {
-    const todosMarcados = rascunho.length === opcoes.length;
-    if (todosMarcados) {
-      // Isola o item clicado
-      setRascunho([valor]);
-      return;
-    }
-    const jaEsta = rascunho.includes(valor);
-    const novo = jaEsta ? rascunho.filter((v) => v !== valor) : [...rascunho, valor];
-    setRascunho(novo.length === opcoes.length ? [...opcoes] : novo);
-  }
-
-  const opcoesFiltradas = opcoes.filter((o) =>
-    o.toLowerCase().includes(busca.toLowerCase())
-  );
-
   const ativo = selecionados.length > 0 && selecionados.length < opcoes.length;
 
+  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const escolhidos = Array.from(e.target.selectedOptions).map((o) => o.value);
+    // Se todos selecionados = sem filtro
+    onChange(escolhidos.length === opcoes.length ? [] : escolhidos);
+  }
+
   return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={aberto ? fechar : abrir}
-        className={`flex w-full items-center justify-between gap-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-colors ${
-          ativo
-            ? "border border-cyan-400/50 bg-cyan-400/10 text-cyan-300"
-            : "border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200"
-        }`}
-      >
-        <span className="flex items-center gap-1 truncate">
-          {ativo && <Filter className="h-3 w-3 shrink-0" />}
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between gap-1">
+        <span className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider ${ativo ? "text-cyan-300" : "text-slate-500"}`}>
+          {ativo && <Filter className="h-2.5 w-2.5" />}
           {label}
-          {ativo && (
-            <span className="ml-1 rounded-full bg-cyan-400 px-1.5 text-[10px] font-black text-slate-950">
-              {selecionados.length}
-            </span>
-          )}
+          {ativo && <span className="rounded-full bg-cyan-400 px-1 text-[9px] text-slate-950">{selecionados.length}</span>}
         </span>
-        <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${aberto ? "rotate-180" : ""}`} />
-      </button>
-
-      {aberto && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-2xl border border-white/15 bg-slate-900 shadow-2xl shadow-black/50">
-          <div className="border-b border-white/10 p-2">
-            <input
-              autoFocus
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              placeholder="Pesquisar..."
-              className="w-full rounded-lg border border-white/10 bg-slate-950/80 px-2 py-1.5 text-xs text-white outline-none focus:border-cyan-400 placeholder:text-slate-600"
-            />
-          </div>
-
-          <div className="flex gap-1 border-b border-white/10 px-2 py-1.5">
-            <button onClick={() => setRascunho([...opcoes])}
-              className="flex-1 rounded-lg bg-white/5 px-2 py-1 text-xs font-bold text-slate-300 hover:bg-white/10">
-              Todos
-            </button>
-            <button onClick={() => setRascunho([])}
-              className="flex-1 rounded-lg bg-white/5 px-2 py-1 text-xs font-bold text-slate-300 hover:bg-white/10">
-              Nenhum
-            </button>
-            <button onClick={confirmar}
-              className="flex-1 rounded-lg bg-cyan-400/20 px-2 py-1 text-xs font-black text-cyan-300 hover:bg-cyan-400/30">
-              OK
-            </button>
-          </div>
-
-          <ul className="max-h-48 overflow-y-auto p-1">
-            {opcoesFiltradas.length === 0 && (
-              <li className="px-3 py-2 text-xs text-slate-500">Nenhum resultado</li>
-            )}
-            {opcoesFiltradas.map((opcao) => (
-              <li key={opcao}>
-                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-200 hover:bg-white/10">
-                  <input
-                    type="checkbox"
-                    checked={rascunho.includes(opcao)}
-                    onChange={() => toggleRascunho(opcao)}
-                    className="h-3.5 w-3.5 accent-cyan-400"
-                  />
-                  <span className="truncate">{opcao || "(vazio)"}</span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+        {ativo && (
+          <button onClick={() => onChange([])} className="text-[9px] text-slate-500 hover:text-red-400">✕</button>
+        )}
+      </div>
+      <select
+        multiple
+        size={Math.min(opcoes.length, 4)}
+        value={selecionados.length === 0 ? opcoes : selecionados}
+        onChange={handleChange}
+        className="w-full rounded-lg border border-white/10 bg-slate-950/80 text-xs text-slate-200 outline-none focus:border-cyan-400 [&>option]:px-2 [&>option]:py-0.5 [&>option:checked]:bg-cyan-400/20 [&>option:checked]:text-cyan-200"
+      >
+        {opcoes.map((o) => (
+          <option key={o} value={o}>{o || "(vazio)"}</option>
+        ))}
+      </select>
     </div>
   );
 }
