@@ -246,6 +246,16 @@ export default function Page() {
     filtroNome.length > 0 || filtroCor.length > 0 || filtroLocal.length > 0 || filtroCarretel.length > 0 ||
     (filtroLiquidoOp !== "" && filtroLiquidoValor !== "");
 
+  // Chave que muda sempre que qualquer filtro muda — força remount do tbody
+  const filtroKey = [
+    filtroNome.join("|"),
+    filtroCor.join("|"),
+    filtroLocal.join("|"),
+    filtroCarretel.join("|"),
+    filtroLiquidoOp,
+    filtroLiquidoValor,
+  ].join("__");
+
   function limparTodosFiltros() {
     setFiltroNome([]); setFiltroCor([]);
     setFiltroLocal([]); setFiltroCarretel([]);
@@ -522,7 +532,7 @@ export default function Page() {
                   <th className="px-4 pb-2 pt-2">Acoes</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody key={filtroKey}>
                 {estoqueFiltrado.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-8 text-center text-sm text-slate-500">
