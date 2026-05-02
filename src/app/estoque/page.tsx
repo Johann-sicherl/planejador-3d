@@ -482,57 +482,44 @@ export default function Page() {
 
         <LoadingOrEmpty loading={loadingEstoque} empty={estoque.length === 0}
           loadingText="Carregando estoque..." emptyText="Nenhum registro de estoque.">
+          {/* Filtros fora da tabela — garante re-render correto do React */}
+          <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-6">
+            <FiltroColuna label="Filamento" opcoes={opcoesNome}
+              selecionados={filtroNome} onChange={setFiltroNome} />
+            <FiltroColuna label="Cor" opcoes={opcoesCor}
+              selecionados={filtroCor} onChange={setFiltroCor} />
+            <FiltroColuna label="Localizacao" opcoes={opcoesLocal}
+              selecionados={filtroLocal} onChange={setFiltroLocal} />
+            <FiltroColuna label="Carretel" opcoes={opcoesCarretel}
+              selecionados={filtroCarretel} onChange={setFiltroCarretel} />
+            <div className="flex gap-1 items-center">
+              <select value={filtroLiquidoOp} onChange={(e) => setFiltroLiquidoOp(e.target.value as OperadorLiquido)}
+                className="w-14 rounded-lg border border-white/10 bg-slate-950/60 px-1 py-2 text-xs text-slate-200 outline-none focus:border-cyan-400">
+                <option value="">Liq.</option>
+                <option value=">">{">"}</option>
+                <option value="<">{"<"}</option>
+                <option value="=">{"="}</option>
+              </select>
+              <input type="number" value={filtroLiquidoValor}
+                onChange={(e) => setFiltroLiquidoValor(e.target.value)}
+                placeholder="g"
+                disabled={filtroLiquidoOp === ""}
+                className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-2 py-2 text-xs text-slate-200 outline-none focus:border-cyan-400 placeholder:text-slate-600 disabled:opacity-30" />
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] border-separate border-spacing-y-1 text-sm">
               <thead>
-                {/* Linha de labels */}
                 <tr className="text-left text-xs uppercase tracking-widest text-slate-500">
-                  <th className="px-2 pb-1 pt-2">Filamento</th>
-                  <th className="px-2 pb-1 pt-2">Cor</th>
-                  <th className="px-2 pb-1 pt-2">Localizacao</th>
-                  <th className="px-2 pb-1 pt-2">Marca carretel</th>
-                  <th className="px-2 pb-1 pt-2">Peso c/ carretel</th>
-                  <th className="px-2 pb-1 pt-2">Tara</th>
-                  <th className="px-2 pb-1 pt-2">Filamento liquido</th>
-                  <th className="px-2 pb-1 pt-2">Acoes</th>
-                </tr>
-                {/* Linha de filtros estilo Excel */}
-                <tr>
-                  <th className="px-2 pb-3">
-                    <FiltroColuna label="Filamento" opcoes={opcoesNome}
-                      selecionados={filtroNome} onChange={(v) => setFiltroNome(v)} />
-                  </th>
-                  <th className="px-2 pb-3">
-                    <FiltroColuna label="Cor" opcoes={opcoesCor}
-                      selecionados={filtroCor} onChange={(v) => setFiltroCor(v)} />
-                  </th>
-                  <th className="px-2 pb-3">
-                    <FiltroColuna label="Localizacao" opcoes={opcoesLocal}
-                      selecionados={filtroLocal} onChange={(v) => setFiltroLocal(v)} />
-                  </th>
-                  <th className="px-2 pb-3">
-                    <FiltroColuna label="Carretel" opcoes={opcoesCarretel}
-                      selecionados={filtroCarretel} onChange={(v) => setFiltroCarretel(v)} />
-                  </th>
-                  <th className="px-2 pb-3" />
-                  <th className="px-2 pb-3" />
-                  <th className="px-2 pb-3">
-                    <div className="flex gap-1">
-                      <select value={filtroLiquidoOp} onChange={(e) => setFiltroLiquidoOp(e.target.value as OperadorLiquido)}
-                        className="w-12 rounded-lg border border-white/10 bg-slate-950/60 px-1 py-1.5 text-xs text-slate-200 outline-none focus:border-cyan-400">
-                        <option value="">--</option>
-                        <option value=">">{">"}</option>
-                        <option value="<">{"<"}</option>
-                        <option value="=">{"="}</option>
-                      </select>
-                      <input type="number" value={filtroLiquidoValor}
-                        onChange={(e) => setFiltroLiquidoValor(e.target.value)}
-                        placeholder="g"
-                        disabled={filtroLiquidoOp === ""}
-                        className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-cyan-400 placeholder:text-slate-600 disabled:opacity-30" />
-                    </div>
-                  </th>
-                  <th className="px-2 pb-3" />
+                  <th className="px-4 pb-2 pt-2">Filamento</th>
+                  <th className="px-4 pb-2 pt-2">Cor</th>
+                  <th className="px-4 pb-2 pt-2">Localizacao</th>
+                  <th className="px-4 pb-2 pt-2">Marca carretel</th>
+                  <th className="px-4 pb-2 pt-2">Peso c/ carretel</th>
+                  <th className="px-4 pb-2 pt-2">Tara</th>
+                  <th className="px-4 pb-2 pt-2">Filamento liquido</th>
+                  <th className="px-4 pb-2 pt-2">Acoes</th>
                 </tr>
               </thead>
               <tbody>
