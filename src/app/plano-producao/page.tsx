@@ -186,28 +186,45 @@ export default function PlanoProducaoPage() {
     if (!options||!idPedStr) { setAlertaEstoque(null); return; }
     const ped=(options.pedidos||[]).find((i)=>String(i.id_pedido)===idPedStr);
     const id3mf=Number(id3mfStr||ped?.id_3mf||"");
-    const arq=(options.arquivos3mf||[]).find((i)=>Number(i.id_3mf)===id3mf);
-    if (!arq) { setAlertaEstoque({tipo:"aviso",texto:"Pedido sem Arquivo 3MF — estoque nao validado."}); return; }
-    const idComp=numField(arq,["id_componente_stl","id_componente","componente_id"]);
-    const qtdComp=numField(arq,["qtd_componente","quantidade_componentes","qtd","quantidade"])||1;
-    const comp=(options.componentes||[]).find((i)=>{
-      const ids=[numField(i,["id_componente_stl"]),numField(i,["id_componente"]),numField(i,["id"])].filter((v)=>v!==null);
-      return idComp!==null&&ids.includes(idComp);
-    });
-    if (!comp) { setAlertaEstoque({tipo:"aviso",texto:"Componente nao encontrado — estoque nao validado."}); return; }
+
+    // Busca TODAS as linhas do 3MF (uma por STL) — não apenas a primeira
+    const linhas3mf=(options.arquivos3mf||[]).filter((i)=>Number(i.id_3mf)===id3mf);
+    if (!linhas3mf.length) { setAlertaEstoque({tipo:"aviso",texto:"Pedido sem Arquivo 3MF — estoque nao validado."}); return; }
+
+    // Mapa de estoque total por filamento
     const estoqueMap=new Map<number,number>();
     for (const i of options.estoque||[]) {
       const idF=numField(i,["id_filamento"]); const qtd=numField(i,["qtd_estoque_gramas","quantidade","qtd"]);
       if (idF!==null&&qtd!==null) estoqueMap.set(idF,(estoqueMap.get(idF)||0)+qtd);
     }
-    const nec:{necessario:number;disponivel:number;label:string}[]=[];
-    for (let n=1;n<=8;n++) {
-      const idF=numField(comp,[`id_filamento${n}`,`id_filamento_${n}`]);
-      const g=numField(comp,[`gramas_filamento_${n}`,`gramas_filamento${n}`]);
-      if (idF===null||g===null||g<=0) continue;
-      const fil=(options.filamentos||[]).find((i)=>Number(i.id_filamento)===idF);
-      nec.push({necessario:Number((g*qtdComp).toFixed(3)),disponivel:Number((estoqueMap.get(idF)||0).toFixed(3)),label:labelFrom(fil,["nome_filamento","nome"],`Filamento ${idF}`)});
+
+    // Acumula necessidade de cada filamento somando todos os STLs do 3MF
+    const necMap=new Map<number,{necessario:number;disponivel:number;label:string}>();
+    for (const arq of linhas3mf) {
+      const idComp=numField(arq,["id_componente_stl","id_componente","componente_id"]);
+      const qtdComp=numField(arq,["qtd_componente","quantidade_componentes","qtd","quantidade"])||1;
+      const comp=(options.componentes||[]).find((i)=>{
+        const ids=[numField(i,["id_componente_stl"]),numField(i,["id_componente"]),numField(i,["id"])].filter((v)=>v!==null);
+        return idComp!==null&&ids.includes(idComp);
+      });
+      if (!comp) continue;
+      for (let n=1;n<=8;n++) {
+        const idF=numField(comp,[`id_filamento${n}`,`id_filamento_${n}`]);
+        const g=numField(comp,[`gramas_filamento_${n}`,`gramas_filamento${n}`]);
+        if (idF===null||g===null||g<=0) continue;
+        const fil=(options.filamentos||[]).find((i)=>Number(i.id_filamento)===idF);
+        const label=labelFrom(fil,["nome_filamento","nome"],`Filamento ${idF}`);
+        const totalNec=Number((g*qtdComp).toFixed(3));
+        const prev=necMap.get(idF);
+        necMap.set(idF,{
+          necessario: Number(((prev?.necessario||0)+totalNec).toFixed(3)),
+          disponivel: Number((estoqueMap.get(idF)||0).toFixed(3)),
+          label,
+        });
+      }
     }
+
+    const nec=[...necMap.values()];
     if (!nec.length) { setAlertaEstoque({tipo:"aviso",texto:"Nenhum consumo cadastrado para o componente."}); return; }
     const resumo=nec.map((n)=>`${n.label}: ${n.necessario}g / ${n.disponivel}g disponivel`).join(" | ");
     const faltante=nec.some((n)=>n.disponivel<n.necessario);
