@@ -11,7 +11,7 @@ import {
   AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Edit3, Factory,
   GripVertical, Package, Plus, Printer, Save, Sparkles, Trash2, X,
 } from "lucide-react";
-import { Feedback, PageShell } from "../_shared";
+import { Feedback, PageShell , useAuthGuard } from "../_shared";
 
 type StatusProducao = "pedidos" | "fila" | "producao" | "finalizado" | "falha";
 type Prioridade = "Baixa" | "Média" | "Alta" | "Urgente";
@@ -134,6 +134,7 @@ function calcPesoPedido(opts: OptionsPayload|null, idPedStr: string) {
 }
 
 export default function PlanoProducaoPage() {
+  useAuthGuard();
   const [planos,setPlanos]=useState<PlanoProducao[]>([]);
   const [options,setOptions]=useState<OptionsPayload|null>(null);
   const [loading,setLoading]=useState(true);

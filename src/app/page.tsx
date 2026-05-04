@@ -1,4 +1,5 @@
 "use client";
+import { useAuthGuard } from "./_shared";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -103,6 +104,7 @@ const links: HomeLink[] = [
 ];
 
 export default function Home() {
+  useAuthGuard();
   const [email, setEmail] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
