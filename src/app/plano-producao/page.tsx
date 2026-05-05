@@ -27,6 +27,7 @@ type PlanoProducao = {
   prioridade?: Prioridade | null;
   progresso?: number | null;
   peso_estimado_g?: number | null;
+  stls_concluidos?: number[] | null;
 };
 
 type OptionsPayload = {
@@ -795,8 +796,12 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
 
   // Card começa colapsado; expande ao clicar no chevron
   const [expandido,setExpandido]=useState(false);
-  // Checkboxes de STL (estado local por card)
-  const [stlsConcluidos,   setStlsConcluidos]   = useState<number[]>([]);
+  // Checkboxes de STL — inicializa do banco (plano.stls_concluidos)
+  const [stlsConcluidos,   setStlsConcluidos]   = useState<number[]>(
+    () => Array.isArray((plano as Record<string,unknown>).stls_concluidos)
+      ? ((plano as Record<string,unknown>).stls_concluidos as number[])
+      : []
+  );
   const [stlsComFalha,     setStlsComFalha]     = useState<number[]>([]);
   const [mostrarFormFalhaStl, setMostrarFormFalhaStl] = useState(false);
   const [gramasFalhaStl,   setGramasFalhaStl]   = useState("");
@@ -918,11 +923,16 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                       return (
                         <div key={i} className={`flex items-center gap-1.5 rounded-lg px-1.5 py-1 transition-colors ${isConcluido?"bg-emerald-500/10":isFalhaStl?"bg-red-500/10":""}`}>
                           <input type="checkbox" checked={isConcluido}
-                            onChange={()=>{
+                            onChange={async ()=>{
                               const novo=isConcluido?stlsConcluidos.filter(x=>x!==lineId):[...stlsConcluidos,lineId];
                               setStlsConcluidos(novo);
                               const pct=Math.round((novo.length/linhas.length)*100);
                               onAtualizarProgresso?.(plano.id_pedido,Math.min(pct,100));
+                              // Persiste no banco
+                              await fetch("/api/plano-producao",{
+                                method:"PUT",headers:{"Content-Type":"application/json"},
+                                body:JSON.stringify({...plano,stls_concluidos:novo,progresso:Math.min(pct,100)}),
+                              });
                             }}
                             className="h-3 w-3 accent-emerald-400 shrink-0 cursor-pointer" title="Concluido"/>
                           <span className={`flex-1 truncate ${isConcluido?"line-through text-slate-600":isFalhaStl?"text-red-400":"text-slate-400"}`}>{nome}</span>

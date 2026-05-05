@@ -14,6 +14,7 @@ const FIELDS = [
   "prioridade",
   "progresso",
   "peso_estimado_g",
+  "stls_concluidos",
 ];
 
 const NUMERIC = [
@@ -31,8 +32,11 @@ function sanitize(body: Record<string, unknown>) {
 
   for (const field of FIELDS) {
     const value = body[field];
+    if (field === "stls_concluidos") {
+      payload[field] = Array.isArray(value) ? value.map(Number) : [];
+      continue;
+    }
     if (value === "" || value === undefined) continue;
-
     if (value === null) {
       payload[field] = null;
     } else if (NUMERIC.includes(field)) {
