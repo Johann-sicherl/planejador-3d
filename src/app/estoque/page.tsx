@@ -17,6 +17,7 @@ type Filamento = { id_filamento: number; nome_filamento: string; material_filame
 type Carretel  = { id_carretel: number; marca_carretel: string; peso_carretel_g: number };
 
 type RegistroEstoque = {
+  id_estoque?:        number | null;
   id_filamento?:      number | null;
   qtd_estoque_gramas?: number | null;
   localizacao?:       string | null;
@@ -270,7 +271,7 @@ export default function Page() {
   }
 
   function fillEstoqueForEdit(row: RegistroEstoque) {
-    setEditingEstoqueId(String(row.id_filamento ?? ""));
+    setEditingEstoqueId(String(row.id_estoque ?? ""));
     setIdFilamento(String(row.id_filamento ?? ""));
     setPesoComCarretelG(String(row.peso_com_carretel_g ?? ""));
     setIdCarretel(String(row.id_carretel ?? ""));
@@ -305,7 +306,7 @@ export default function Page() {
         localizacao:        localizacao || null,
       };
       const method = editingEstoqueId ? "PUT" : "POST";
-      if (editingEstoqueId) payload.id_filamento = Number(editingEstoqueId);
+      if (editingEstoqueId) payload.id_estoque = Number(editingEstoqueId);
       const r = await fetch("/api/estoque", {
         method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
       });
@@ -542,7 +543,7 @@ export default function Page() {
                   </tr>
                 ) : (
                   estoqueFiltrado.map(({ row, nome, cor, local, carretel, tara, bruto, liquido }, i) => (
-                    <tr key={String(row.id_filamento ?? i)} className="bg-white/[0.035] text-slate-200">
+                    <tr key={String(row.id_estoque ?? row.id_filamento ?? i)} className="bg-white/[0.035] text-slate-200">
                       <td className="rounded-l-2xl px-4 py-3 font-bold text-white">{nome}</td>
                       <td className="px-4 py-3 text-slate-300">{cor}</td>
                       <td className="px-4 py-3 text-slate-400">{local}</td>

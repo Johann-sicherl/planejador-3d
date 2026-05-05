@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "../../../lib/supabase";
 
-const TABLE = "estoque_j_ao_cubo";
-const ID_COL = "id_filamento";
+const TABLE  = "estoque_j_ao_cubo";
+const ID_COL = "id_estoque"; // PK serial única por linha de carretel
 const FIELDS = ["id_filamento", "qtd_estoque_gramas", "localizacao", "peso_com_carretel_g", "id_carretel"];
 const NUMERIC = ["id_filamento", "qtd_estoque_gramas", "peso_com_carretel_g", "id_carretel"];
 
@@ -26,6 +26,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from(TABLE)
     .select("*, carretel:cadastro_pesos_carreteis ( id_carretel, marca_carretel, peso_carretel_g )")
+    .order("id_filamento", { ascending: true })
     .order(ID_COL, { ascending: true });
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true, data });
@@ -48,7 +49,7 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const id = body[ID_COL];
     if (id === undefined || id === null || id === "")
-      return NextResponse.json({ ok: false, error: "ID nao informado." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "id_estoque nao informado." }, { status: 400 });
     const payload = sanitize(body);
     const { data, error } = await supabase.from(TABLE).update(payload).eq(ID_COL, id).select();
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
