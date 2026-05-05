@@ -56,7 +56,8 @@ type SlotFilamento = {
   idFilamento: number;
   nomeFilamento: string;
   nomeStl: string;
-  gramas: number;
+  gramas: number;           // gramas totais da peça (referência)
+  gramasPerdido: string;    // gramas efetivamente perdidas (digitado pelo usuário)
   idEstoqueEscolhido: string;
 };
 
@@ -70,9 +71,8 @@ type FinalizacaoEmAndamento = {
 type FalhaCarretelEmAndamento = {
   idPedido: number;
   statusAnterior: StatusProducao;
-  slots: SlotFilamento[];  // mesmos slots, mas gramas = material perdido
-  gramasPerdido: string;
-  tempoPerdido: string;
+  slots: SlotFilamento[];  // cada slot tem gramasPerdido individual
+  tempoPerdido: string;    // tempo total perdido
   salvando: boolean;
 };
 
@@ -358,11 +358,11 @@ export default function PlanoProducaoPage() {
           const fil=(options.filamentos||[]).find((f)=>Number(f.id_filamento)===idFil);
           const nomeFil=String(fil?.nome_filamento??`Filamento ${idFil}`);
           const cor=fil?.cor_filamento?` ${fil.cor_filamento}`:"";
-          slots.push({idFilamento:idFil,nomeFilamento:`${nomeFil}${cor}`,nomeStl,gramas:gramas*Number(linha.qtd_componente||1),idEstoqueEscolhido:""});
+          slots.push({idFilamento:idFil,nomeFilamento:`${nomeFil}${cor}`,nomeStl,gramas:gramas*Number(linha.qtd_componente||1),gramasPerdido:"",idEstoqueEscolhido:""});
         }
       }
       setPlanos((prev)=>prev.map((p)=>p.id_pedido===idPedido?{...p,status_producao:"falha"}:p));
-      setFalhaCarretelEmAndamento({idPedido,statusAnterior:planoAtual.status_producao||"pedidos",slots,gramasPerdido:"",tempoPerdido:"",salvando:false});
+      setFalhaCarretelEmAndamento({idPedido,statusAnterior:planoAtual.status_producao||"pedidos",slots,tempoPerdido:"",salvando:false});
       return;
     }
     if (destino==="falha") {
@@ -397,6 +397,7 @@ export default function PlanoProducaoPage() {
             nomeFilamento: `${nomeFil}${cor}`,
             nomeStl,
             gramas: gramas * Number(linha.qtd_componente || 1),
+            gramasPerdido: "",
             idEstoqueEscolhido: "", // usuario deve escolher explicitamente
           });
         }
@@ -500,15 +501,16 @@ export default function PlanoProducaoPage() {
       const r1=await fetch("/api/plano-producao",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({...planoAtual,status_producao:"falha"})});
       const d1=await r1.json();
       if (!r1.ok||!d1.ok) throw new Error(d1.error||"Erro ao salvar.");
-      // 2. Grava em falhas_producao
+      // 2. Grava em falhas_producao (soma total das gramas perdidas)
+      const totalGramas=snap.slots.reduce((acc,s)=>acc+(Number(s.gramasPerdido)||0),0);
       await fetch("/api/falhas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
         id_3mf:planoAtual?.id_3mf??null,
         tempo_impressao_min_perdido:snap.tempoPerdido?Number(snap.tempoPerdido):null,
-        quant_mat_perdido:snap.gramasPerdido?Number(snap.gramasPerdido):null,
+        quant_mat_perdido:totalGramas||null,
       })});
-      // 3. Debita material perdido de cada carretel escolhido
+      // 3. Debita de cada carretel o que foi efetivamente perdido (gramasPerdido por slot)
       for (const slot of snap.slots) {
-        if (!slot.idEstoqueEscolhido) continue;
+        if (!slot.idEstoqueEscolhido||!slot.gramasPerdido) continue;
         const parts=slot.idEstoqueEscolhido.split("_");
         const idFilStr=parts[0];
         const localizacao=parts.slice(1,-1).join("_");
@@ -517,7 +519,7 @@ export default function PlanoProducaoPage() {
           id_filamento:Number(idFilStr),
           localizacao:localizacao||undefined,
           idx:Number.isNaN(idx)?0:idx,
-          gramas:slot.gramas,
+          gramas:Number(slot.gramasPerdido), // usa o valor digitado pelo usuário
         })});
       }
       setMensagem("Falha registrada e estoque debitado.");
@@ -771,7 +773,7 @@ export default function PlanoProducaoPage() {
                   onFinConfirm={confirmarFinalizacao} onFinCancel={cancelarFinalizacao}
                   falhaCarretelEmAndamento={falhaCarretelEmAndamento}
                   onFalhaCarretelSlotChange={(idx,val)=>setFalhaCarretelEmAndamento((prev)=>prev?{...prev,slots:prev.slots.map((s,j)=>j===idx?{...s,idEstoqueEscolhido:val}:s)}:null)}
-                  onFalhaCarretelGramas={(v)=>setFalhaCarretelEmAndamento((prev)=>prev?{...prev,gramasPerdido:v}:null)}
+                  onFalhaCarretelSlotGramas={(idx,v)=>setFalhaCarretelEmAndamento((prev)=>prev?{...prev,slots:prev.slots.map((s,j)=>j===idx?{...s,gramasPerdido:v}:s)}:null)}
                   onFalhaCarretelTempo={(v)=>setFalhaCarretelEmAndamento((prev)=>prev?{...prev,tempoPerdido:v}:null)}
                   onFalhaCarretelConfirm={confirmarFalhaCarretel} onFalhaCarretelCancel={cancelarFalhaCarretel}
                   onMover={moverPlano} onEdit={editarPlano} onDelete={excluirPlano} />
@@ -809,7 +811,7 @@ function Indicador({titulo,valor,subtitulo,vermelho=false}:{titulo:string;valor:
   );
 }
 
-function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,falhaCarretelEmAndamento,onFalhaCarretelSlotChange,onFalhaCarretelGramas,onFalhaCarretelTempo,onFalhaCarretelConfirm,onFalhaCarretelCancel,onMover,onEdit,onDelete}:{
+function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,falhaCarretelEmAndamento,onFalhaCarretelSlotChange,onFalhaCarretelSlotGramas,onFalhaCarretelTempo,onFalhaCarretelConfirm,onFalhaCarretelCancel,onMover,onEdit,onDelete}:{
   coluna:{id:StatusProducao;titulo:string;subtitulo:string;bordaTopo:string};
   planos:PlanoProducao[]; nomes:Nomes; options:OptionsPayload|null; falhaEmAndamento:FalhaEmAndamento|null;
   onFalhaChange:(field:"gramasPerdido"|"tempoPerdido",value:string)=>void;
@@ -821,7 +823,8 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
   onFinConfirm:()=>void; onFinCancel:()=>void;
   falhaCarretelEmAndamento:FalhaCarretelEmAndamento|null;
   onFalhaCarretelSlotChange:(idx:number,val:string)=>void;
-  onFalhaCarretelGramas:(v:string)=>void; onFalhaCarretelTempo:(v:string)=>void;
+  onFalhaCarretelSlotGramas:(idx:number,v:string)=>void;
+  onFalhaCarretelTempo:(v:string)=>void;
   onFalhaCarretelConfirm:()=>void; onFalhaCarretelCancel:()=>void;
   onMover:(idPedido:number,direcao:"avancar"|"recuar")=>void;
   onEdit:(plano:PlanoProducao)=>void; onDelete:(idPedido:number)=>void;
@@ -850,7 +853,7 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
               finalizacaoEmAndamento={finalizacaoEmAndamento?.idPedido===plano.id_pedido?finalizacaoEmAndamento:null}
               onFinSlotChange={onFinSlotChange} onFinConfirm={onFinConfirm} onFinCancel={onFinCancel}
               falhaCarretelEmAndamento={falhaCarretelEmAndamento?.idPedido===plano.id_pedido?falhaCarretelEmAndamento:null}
-              onFalhaCarretelSlotChange={onFalhaCarretelSlotChange} onFalhaCarretelGramas={onFalhaCarretelGramas}
+              onFalhaCarretelSlotChange={onFalhaCarretelSlotChange} onFalhaCarretelSlotGramas={onFalhaCarretelSlotGramas}
               onFalhaCarretelTempo={onFalhaCarretelTempo} onFalhaCarretelConfirm={onFalhaCarretelConfirm}
               onFalhaCarretelCancel={onFalhaCarretelCancel}
               onMover={onMover} onEdit={onEdit} onDelete={onDelete} />
@@ -861,7 +864,7 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
   );
 }
 
-function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,falhaCarretelEmAndamento,onFalhaCarretelSlotChange,onFalhaCarretelGramas,onFalhaCarretelTempo,onFalhaCarretelConfirm,onFalhaCarretelCancel,onMover,onEdit,onDelete}:{
+function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,falhaCarretelEmAndamento,onFalhaCarretelSlotChange,onFalhaCarretelSlotGramas,onFalhaCarretelTempo,onFalhaCarretelConfirm,onFalhaCarretelCancel,onMover,onEdit,onDelete}:{
   plano:PlanoProducao; nomes:Nomes; options?:OptionsPayload|null; flutuando?:boolean; falhaEmAndamento?:FalhaEmAndamento|null;
   onFalhaChange?:(field:"gramasPerdido"|"tempoPerdido",value:string)=>void;
   onFalhaConfirm?:()=>void; onFalhaCancel?:()=>void;
@@ -872,7 +875,8 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
   onFinConfirm?:()=>void; onFinCancel?:()=>void;
   falhaCarretelEmAndamento?:FalhaCarretelEmAndamento|null;
   onFalhaCarretelSlotChange?:(idx:number,val:string)=>void;
-  onFalhaCarretelGramas?:(v:string)=>void; onFalhaCarretelTempo?:(v:string)=>void;
+  onFalhaCarretelSlotGramas?:(idx:number,v:string)=>void;
+  onFalhaCarretelTempo?:(v:string)=>void;
   onFalhaCarretelConfirm?:()=>void; onFalhaCarretelCancel?:()=>void;
   onMover?:(idPedido:number,direcao:"avancar"|"recuar")=>void;
   onEdit?:(plano:PlanoProducao)=>void; onDelete?:(idPedido:number)=>void;
@@ -1113,7 +1117,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
             const fil=(options.filamentos||[]).find((f)=>Number(f.id_filamento)===idFil);
             const nomeFil=String(fil?.nome_filamento??`Filamento ${idFil}`);
             const cor=fil?.cor_filamento?` ${fil.cor_filamento}`:"";
-            slots.push({idFilamento:idFil,nomeFilamento:`${nomeFil}${cor}`,nomeStl,gramas:gramas*Number(linha.qtd_componente||1),idEstoqueEscolhido:""});
+            slots.push({idFilamento:idFil,nomeFilamento:`${nomeFil}${cor}`,nomeStl,gramas:gramas*Number(linha.qtd_componente||1),gramasPerdido:"",idEstoqueEscolhido:""});
           }
         }
         onRegistrarFalhaStls?.(plano.id_pedido,stlsComFalha,gramasFalhaStl,tempoFalhaStl);
@@ -1216,21 +1220,12 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                 <AlertTriangle className="h-3.5 w-3.5 text-red-400"/>
                 <p className="text-xs font-black text-red-300">Registrar falha — selecione o carretel</p>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="mb-1 block text-[10px] font-bold text-red-300/80">Material perdido (g) *</label>
-                  <input type="number" min="0" step="0.1" value={falhaCarretelEmAndamento.gramasPerdido}
-                    onChange={(e)=>onFalhaCarretelGramas?.(e.target.value)} placeholder="Ex.: 45.5"
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    className="w-full rounded-lg border border-red-500/30 bg-slate-950/80 px-2 py-1.5 text-xs text-white outline-none focus:border-red-400 placeholder:text-slate-600"/>
-                </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-bold text-red-300/80">Tempo perdido (min) *</label>
-                  <input type="number" min="0" value={falhaCarretelEmAndamento.tempoPerdido}
-                    onChange={(e)=>onFalhaCarretelTempo?.(e.target.value)} placeholder="Ex.: 120"
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    className="w-full rounded-lg border border-red-500/30 bg-slate-950/80 px-2 py-1.5 text-xs text-white outline-none focus:border-red-400 placeholder:text-slate-600"/>
-                </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-bold text-red-300/80">Tempo total perdido (min) *</label>
+                <input type="number" min="0" value={falhaCarretelEmAndamento.tempoPerdido}
+                  onChange={(e)=>onFalhaCarretelTempo?.(e.target.value)} placeholder="Ex.: 120"
+                  onPointerDown={(e)=>e.stopPropagation()}
+                  className="w-full rounded-lg border border-red-500/30 bg-slate-950/80 px-2 py-1.5 text-xs text-white outline-none focus:border-red-400 placeholder:text-slate-600"/>
               </div>
               {falhaCarretelEmAndamento.slots.map((slot,idx)=>{
                 const estoqueDisp=(options?.estoque||[])
@@ -1239,7 +1234,16 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                 return (
                   <div key={idx} className="space-y-1 border-t border-white/5 pt-2 first:border-0 first:pt-0">
                     <p className="text-[10px] font-black text-slate-300">{slot.nomeStl}</p>
-                    <p className="text-[10px] text-slate-500">{slot.nomeFilamento} — <span className="text-red-300">{slot.gramas}g</span></p>
+                    <p className="text-[10px] text-slate-500">{slot.nomeFilamento} — referência: <span className="text-slate-400">{slot.gramas}g</span></p>
+                    <div className="mb-1">
+                      <label className="mb-0.5 block text-[10px] font-bold text-red-300/80">Gramas perdidas neste componente *</label>
+                      <input type="number" min="0" step="0.1"
+                        value={slot.gramasPerdido}
+                        onChange={(e)=>onFalhaCarretelSlotGramas?.(idx,e.target.value)}
+                        onPointerDown={(e)=>e.stopPropagation()}
+                        placeholder={`Máx. ${slot.gramas}g`}
+                        className="w-full rounded-lg border border-red-500/30 bg-slate-950/80 px-2 py-1.5 text-xs text-white outline-none focus:border-red-400 placeholder:text-slate-600"/>
+                    </div>
                     <div className="space-y-1">
                       {estoqueDisp.map((est,j)=>{
                         const estKey=`${est.id_filamento}_${est.localizacao??""}_${j}`;
@@ -1261,7 +1265,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
               })}
               <div className="flex gap-2 pt-1">
                 <button type="button"
-                  disabled={falhaCarretelEmAndamento.salvando||!falhaCarretelEmAndamento.gramasPerdido||!falhaCarretelEmAndamento.tempoPerdido||falhaCarretelEmAndamento.slots.some(s=>!s.idEstoqueEscolhido)}
+                  disabled={falhaCarretelEmAndamento.salvando||!falhaCarretelEmAndamento.tempoPerdido||falhaCarretelEmAndamento.slots.some(s=>!s.idEstoqueEscolhido||!s.gramasPerdido)}
                   onPointerDown={(e)=>e.stopPropagation()}
                   onClick={(e)=>{e.stopPropagation();onFalhaCarretelConfirm?.();}}
                   className="flex-1 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-black text-white hover:bg-red-400 disabled:opacity-50">
