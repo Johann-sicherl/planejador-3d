@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   ActionButtons,
   Feedback,
@@ -11,6 +11,7 @@ import {
   useAuthGuard,
   useCrudList,
 } from "../_shared";
+import { ChevronDown, Filter, X } from "lucide-react";
 
 type Fabricante = {
   id_fabricante_filamento: number;
@@ -48,6 +49,115 @@ const TIPOS_CARRETEL = ["1kg","2kg","500g","250g","Granel","Outro"];
 const FIELD_CLASS =
   "w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none focus:border-cyan-400";
 
+// ── FiltroColuna — idêntico ao do estoque ────────────────────────────────────
+function FiltroColuna({
+  label,
+  opcoes,
+  selecionados,
+  onChange,
+}: {
+  label: string;
+  opcoes: string[];
+  selecionados: string[];
+  onChange: (novo: string[]) => void;
+}) {
+  const [aberto,   setAberto]   = useState(false);
+  const [rascunho, setRascunho] = useState<string[]>([]);
+  const ref = useRef<HTMLDivElement>(null);
+
+  function abrir() {
+    setRascunho(selecionados.length === 0 ? [...opcoes] : [...selecionados]);
+    setAberto(true);
+  }
+
+  function fechar() { setAberto(false); }
+
+  function aplicar() {
+    onChange(rascunho.length === opcoes.length ? [] : [...rascunho]);
+    fechar();
+  }
+
+  useEffect(() => {
+    if (!aberto) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) fechar();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [aberto]);
+
+  function toggleRascunho(valor: string) {
+    setRascunho((prev) => {
+      if (prev.length === opcoes.length) return [valor];
+      const jaEsta = prev.includes(valor);
+      const novo = jaEsta ? prev.filter((v) => v !== valor) : [...prev, valor];
+      return novo.length === opcoes.length ? [...opcoes] : novo;
+    });
+  }
+
+  const ativo = selecionados.length > 0 && selecionados.length < opcoes.length;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={aberto ? fechar : abrir}
+        className={`flex w-full items-center justify-between gap-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-colors ${
+          ativo
+            ? "border border-cyan-400/50 bg-cyan-400/10 text-cyan-300"
+            : "border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200"
+        }`}
+      >
+        <span className="flex items-center gap-1 truncate">
+          {ativo && <Filter className="h-3 w-3 shrink-0" />}
+          {label}
+          {ativo && (
+            <span className="ml-1 rounded-full bg-cyan-400 px-1.5 text-[10px] font-black text-slate-950">
+              {selecionados.length}
+            </span>
+          )}
+        </span>
+        <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${aberto ? "rotate-180" : ""}`} />
+      </button>
+
+      {aberto && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-52 rounded-2xl border border-white/15 bg-slate-900 shadow-2xl shadow-black/50">
+          <div className="flex gap-1 border-b border-white/10 px-2 py-1.5">
+            <button type="button" onClick={() => setRascunho([...opcoes])}
+              className="flex-1 rounded-lg bg-white/5 px-2 py-1 text-xs font-bold text-slate-300 hover:bg-white/10">
+              Todos
+            </button>
+            <button type="button" onClick={() => setRascunho([])}
+              className="flex-1 rounded-lg bg-white/5 px-2 py-1 text-xs font-bold text-slate-300 hover:bg-white/10">
+              Nenhum
+            </button>
+            <button type="button" onClick={aplicar}
+              className="flex-1 rounded-lg bg-cyan-400/20 px-2 py-1 text-xs font-black text-cyan-300 hover:bg-cyan-400/30">
+              OK
+            </button>
+          </div>
+          <ul className="max-h-48 overflow-y-auto p-1">
+            {opcoes.map((opcao) => (
+              <li key={opcao}>
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-200 hover:bg-white/10">
+                  <input
+                    type="checkbox"
+                    checked={rascunho.includes(opcao)}
+                    onChange={() => toggleRascunho(opcao)}
+                    className="h-3.5 w-3.5 accent-cyan-400"
+                  />
+                  <span className="truncate">{opcao || "(vazio)"}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Página principal ─────────────────────────────────────────────────────────
 export default function Page() {
   const { ready } = useAuthGuard();
   const { data, loading, erro, setErro, reload } = useCrudList<Registro>("/api/filamentos");
@@ -64,6 +174,13 @@ export default function Page() {
   const [custoMedioBrl, setCustoMedioBrl] = useState("");
   const [texturaFilamento, setTexturaFilamento] = useState("");
   const [tipoCarretel, setTipoCarretel] = useState("");
+
+  // Filtros
+  const [filtroNome,      setFiltroNome]      = useState<string[]>([]);
+  const [filtroMaterial,  setFiltroMaterial]  = useState<string[]>([]);
+  const [filtroCor,       setFiltroCor]       = useState<string[]>([]);
+  const [filtroCarretel,  setFiltroCarretel]  = useState<string[]>([]);
+  const [filtroFornecedor,setFiltroFornecedor]= useState<string[]>([]);
 
   useEffect(() => { carregarFabricantes(); }, []);
 
@@ -140,6 +257,43 @@ export default function Page() {
     }
   }
 
+  // Opções únicas por coluna
+  const opcoesNome      = [...new Set(data.map((r) => r.nome_filamento     ?? "-"))].sort();
+  const opcoesMaterial  = [...new Set(data.map((r) => r.material_filamento  ?? "-"))].sort();
+  const opcoesCor       = [...new Set(data.map((r) => r.cor_filamento       ?? "-"))].sort();
+  const opcoesCarretel  = [...new Set(data.map((r) => r.tipo_carretel       ?? "-"))].sort();
+  const opcoesFornecedor= [...new Set(data.map((r) => r.fabricante?.nome_fabricante ?? "-"))].sort();
+
+  // Filtragem direta no render
+  const nomeSet      = new Set(filtroNome);
+  const materialSet  = new Set(filtroMaterial);
+  const corSet       = new Set(filtroCor);
+  const carretelSet  = new Set(filtroCarretel);
+  const fornecSet    = new Set(filtroFornecedor);
+
+  const dataFiltrada = data.filter((r) => {
+    const nome     = r.nome_filamento           ?? "-";
+    const material = r.material_filamento       ?? "-";
+    const cor      = r.cor_filamento            ?? "-";
+    const carretel = r.tipo_carretel            ?? "-";
+    const fornec   = r.fabricante?.nome_fabricante ?? "-";
+    return (
+      (nomeSet.size     === 0 || nomeSet.has(nome))      &&
+      (materialSet.size === 0 || materialSet.has(material)) &&
+      (corSet.size      === 0 || corSet.has(cor))        &&
+      (carretelSet.size === 0 || carretelSet.has(carretel)) &&
+      (fornecSet.size   === 0 || fornecSet.has(fornec))
+    );
+  });
+
+  const algumFiltroAtivo = filtroNome.length > 0 || filtroMaterial.length > 0 ||
+    filtroCor.length > 0 || filtroCarretel.length > 0 || filtroFornecedor.length > 0;
+
+  function limparFiltros() {
+    setFiltroNome([]); setFiltroMaterial([]); setFiltroCor([]);
+    setFiltroCarretel([]); setFiltroFornecedor([]);
+  }
+
   if (!ready) return <div className="p-6 text-slate-100">Carregando...</div>;
 
   return (
@@ -155,7 +309,7 @@ export default function Page() {
           {editingId && (
             <button type="button" onClick={resetForm}
               className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-bold text-slate-200 hover:bg-white/10">
-              Cancelaredicao
+              Cancelar edicao
             </button>
           )}
         </div>
@@ -227,47 +381,90 @@ export default function Page() {
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-black text-white">Lista de filamentos</h2>
-            <p className="mt-1 text-sm text-slate-400">Todos os filamentos cadastrados com seus atributos completos.</p>
+            <p className="mt-1 text-sm text-slate-400">
+              Todos os filamentos cadastrados.
+              {algumFiltroAtivo && (
+                <span className="ml-2 text-cyan-400">{dataFiltrada.length} de {data.length} visíveis</span>
+              )}
+            </p>
           </div>
-          <button type="button" onClick={() => { carregarFabricantes(); reload(); }}
-            className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-bold text-slate-200 hover:bg-white/10">
-            Atualizar
-          </button>
+          <div className="flex gap-2">
+            {algumFiltroAtivo && (
+              <button type="button" onClick={limparFiltros}
+                className="flex items-center gap-1 rounded-2xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-500/20">
+                <X className="h-3 w-3" /> Limpar filtros
+              </button>
+            )}
+            <button type="button" onClick={() => { carregarFabricantes(); reload(); }}
+              className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-bold text-slate-200 hover:bg-white/10">
+              Atualizar
+            </button>
+          </div>
         </div>
 
         <LoadingOrEmpty loading={loading} empty={data.length === 0}
           loadingText="Carregando filamentos..." emptyText="Nenhum filamento cadastrado.">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] border-separate border-spacing-y-2 text-sm">
+            <table className="w-full min-w-[1000px] border-separate border-spacing-y-1 text-sm">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-widest text-slate-400">
-                  <th className="px-4 py-2">Nome</th>
-                  <th className="px-4 py-2">Material</th>
-                  <th className="px-4 py-2">Textura</th>
-                  <th className="px-4 py-2">Cor</th>
-                  <th className="px-4 py-2">Carretel</th>
-                  <th className="px-4 py-2">Fornecedor</th>
-                  <th className="px-4 py-2">Custo medio</th>
-                  <th className="px-4 py-2">Acoes</th>
+                {/* Labels */}
+                <tr className="text-left text-xs uppercase tracking-widest text-slate-500">
+                  <th className="px-2 pb-1 pt-2">Nome</th>
+                  <th className="px-2 pb-1 pt-2">Material</th>
+                  <th className="px-2 pb-1 pt-2">Textura</th>
+                  <th className="px-2 pb-1 pt-2">Cor</th>
+                  <th className="px-2 pb-1 pt-2">Carretel</th>
+                  <th className="px-2 pb-1 pt-2">Fornecedor</th>
+                  <th className="px-2 pb-1 pt-2">Custo medio</th>
+                  <th className="px-2 pb-1 pt-2">Acoes</th>
+                </tr>
+                {/* Filtros */}
+                <tr>
+                  <th className="px-2 pb-3">
+                    <FiltroColuna label="Nome" opcoes={opcoesNome} selecionados={filtroNome} onChange={setFiltroNome} />
+                  </th>
+                  <th className="px-2 pb-3">
+                    <FiltroColuna label="Material" opcoes={opcoesMaterial} selecionados={filtroMaterial} onChange={setFiltroMaterial} />
+                  </th>
+                  <th className="px-2 pb-3" />
+                  <th className="px-2 pb-3">
+                    <FiltroColuna label="Cor" opcoes={opcoesCor} selecionados={filtroCor} onChange={setFiltroCor} />
+                  </th>
+                  <th className="px-2 pb-3">
+                    <FiltroColuna label="Carretel" opcoes={opcoesCarretel} selecionados={filtroCarretel} onChange={setFiltroCarretel} />
+                  </th>
+                  <th className="px-2 pb-3">
+                    <FiltroColuna label="Fornecedor" opcoes={opcoesFornecedor} selecionados={filtroFornecedor} onChange={setFiltroFornecedor} />
+                  </th>
+                  <th className="px-2 pb-3" />
+                  <th className="px-2 pb-3" />
                 </tr>
               </thead>
               <tbody>
-                {data.map((row) => (
-                  <tr key={row.id_filamento} className="rounded-2xl bg-white/[0.035] text-slate-200">
-                    <td className="rounded-l-2xl px-4 py-3 font-bold text-white">{row.nome_filamento || "-"}</td>
-                    <td className="px-4 py-3">{row.material_filamento || "-"}</td>
-                    <td className="px-4 py-3">{row.textura_filamento || "-"}</td>
-                    <td className="px-4 py-3">{row.cor_filamento || "-"}</td>
-                    <td className="px-4 py-3">{row.tipo_carretel || "-"}</td>
-                    <td className="px-4 py-3">{row.fabricante?.nome_fabricante || "-"}</td>
-                    <td className="px-4 py-3">
-                      {row.custo_medio_brl == null ? "-" : Number(row.custo_medio_brl).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                    </td>
-                    <td className="rounded-r-2xl px-4 py-3">
-                      <ActionButtons onEdit={() => fillForEdit(row)} onDelete={() => handleDelete(String(row.id_filamento ?? ""))} />
+                {dataFiltrada.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-sm text-slate-500">
+                      Nenhum filamento corresponde aos filtros selecionados.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  dataFiltrada.map((row) => (
+                    <tr key={row.id_filamento} className="rounded-2xl bg-white/[0.035] text-slate-200">
+                      <td className="rounded-l-2xl px-4 py-3 font-bold text-white">{row.nome_filamento || "-"}</td>
+                      <td className="px-4 py-3">{row.material_filamento || "-"}</td>
+                      <td className="px-4 py-3">{row.textura_filamento || "-"}</td>
+                      <td className="px-4 py-3">{row.cor_filamento || "-"}</td>
+                      <td className="px-4 py-3">{row.tipo_carretel || "-"}</td>
+                      <td className="px-4 py-3">{row.fabricante?.nome_fabricante || "-"}</td>
+                      <td className="px-4 py-3">
+                        {row.custo_medio_brl == null ? "-" : Number(row.custo_medio_brl).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      </td>
+                      <td className="rounded-r-2xl px-4 py-3">
+                        <ActionButtons onEdit={() => fillForEdit(row)} onDelete={() => handleDelete(String(row.id_filamento ?? ""))} />
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
