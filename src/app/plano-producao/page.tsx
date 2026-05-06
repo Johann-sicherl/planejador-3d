@@ -44,7 +44,7 @@ type Nomes = {
 };
 
 type FormState = {
-  id_pedido: string; id_impressora: string; id_3mf: string;
+  id_pedido: string; id_impressora: string;
   tempo_impressao_min: string; status_producao: StatusProducao;
   ordem_fila: string; prioridade: Prioridade; progresso: string; peso_estimado_g: string;
 };
@@ -79,7 +79,7 @@ type FalhaCarretelEmAndamento = {
 };
 
 const EMPTY_FORM: FormState = {
-  id_pedido: "", id_impressora: "", id_3mf: "", tempo_impressao_min: "",
+  id_pedido: "", id_impressora: "", tempo_impressao_min: "",
   status_producao: "pedidos", ordem_fila: "", prioridade: "Média",
   progresso: "0", peso_estimado_g: "",
 };
@@ -268,7 +268,7 @@ export default function PlanoProducaoPage() {
     setEditingId(plano.id_pedido);
     setForm({
       id_pedido:String(plano.id_pedido??""), id_impressora:String(plano.id_impressora??""),
-      id_3mf:String(plano.id_3mf??""), tempo_impressao_min:String(plano.tempo_impressao_min??""),
+      tempo_impressao_min:String(plano.tempo_impressao_min??""),
       status_producao:plano.status_producao||"pedidos", ordem_fila:String(plano.ordem_fila??""),
       prioridade:plano.prioridade||"Média", progresso:String(plano.progresso??0),
       peso_estimado_g:String(plano.peso_estimado_g??""),
@@ -280,11 +280,23 @@ export default function PlanoProducaoPage() {
     event.preventDefault();
     try {
       setSaving(true); setErro(""); setMensagem("");
-      const ped=(options?.pedidos||[]).find((p)=>String(p.id_pedido)===form.id_pedido);
-      const id3mfFinal=form.id_3mf||(ped?.id_3mf?String(ped.id_3mf):"");
+      // id_3mf = primeiro 3MF do pedido (para compatibilidade com banco)
+      const ids3mfSave=nomes.pedido3mfs.get(Number(form.id_pedido))||[];
+      const id3mfFinal=ids3mfSave.length>0?ids3mfSave[0]:0;
+      // Calcula tempo automaticamente a partir dos STLs se não informado
+      let tempoAutoMin=toNum(form.tempo_impressao_min);
+      if (!tempoAutoMin && options) {
+        const linhasAutoCalc=(options.arquivos3mf||[]).filter((a)=>ids3mfSave.includes(Number(a.id_3mf)));
+        let tot=0;
+        for (const l of linhasAutoCalc) {
+          const c=(options.componentes||[]).find((x)=>Number(x.id_componente_stl)===Number(l.id_componente_stl));
+          if (c) tot+=Number((c as Record<string,unknown>).tempo_impressao_min||0)*Number(l.qtd_componente||1);
+        }
+        if (tot>0) tempoAutoMin=tot;
+      }
       const payload={
         id_pedido:toNum(form.id_pedido), id_impressora:toNum(form.id_impressora),
-        id_3mf:toNum(id3mfFinal), tempo_impressao_min:toNum(form.tempo_impressao_min),
+        id_3mf:id3mfFinal, tempo_impressao_min:tempoAutoMin,
         status_producao:form.status_producao, ordem_fila:toNum(form.ordem_fila),
         prioridade:form.prioridade, progresso:toNum(form.progresso),
         peso_estimado_g:toNum(form.peso_estimado_g),
@@ -685,11 +697,9 @@ export default function PlanoProducaoPage() {
             <Field label="Pedido">
               <select value={form.id_pedido} disabled={Boolean(editingId)} required className="field"
                 onChange={(e)=>{
-                  const ped=(options?.pedidos||[]).find((p)=>String(p.id_pedido)===e.target.value);
-                  const id3mf=ped?.id_3mf?String(ped.id_3mf):"";
-                  const peso=id3mf?calcPeso3mf(options,id3mf):calcPesoPedido(options,e.target.value);
-                  setForm((f)=>({...f,id_pedido:e.target.value,id_3mf:id3mf||f.id_3mf,peso_estimado_g:peso}));
-                  avaliarEstoque(e.target.value,id3mf||undefined);
+                  const peso=calcPesoPedido(options,e.target.value);
+                  setForm((f)=>({...f,id_pedido:e.target.value,peso_estimado_g:peso}));
+                  avaliarEstoque(e.target.value);
                 }}>
                 <option value="">Selecione</option>
                 {(options?.pedidos||[]).map((p)=>(<option key={String(p.id_pedido)} value={String(p.id_pedido)}>{labelFrom(p,["label_pedido","nome_pedido","numero_pedido"],"Pedido cadastrado")}</option>))}
@@ -708,12 +718,7 @@ export default function PlanoProducaoPage() {
               </div>
             </Field>
 
-            <Field label="Arquivo 3MF">
-              <select value={form.id_3mf} onChange={(e)=>setForm((f)=>({...f,id_3mf:e.target.value}))} className="field">
-                <option value="">Selecione</option>
-                {[...new Map((options?.arquivos3mf||[]).map((a)=>[Number(a.id_3mf),a])).values()].map((a)=>(<option key={String(a.id_3mf)} value={String(a.id_3mf)}>{labelFrom(a,["nome_arquivo_3mf","nome_arquivo","filename"],"Arquivo 3MF sem nome")}</option>))}
-              </select>
-            </Field>
+
 
             <Field label="Status">
               <select value={form.status_producao} onChange={(e)=>setForm((f)=>({...f,status_producao:e.target.value as StatusProducao}))} className="field">
@@ -735,7 +740,10 @@ export default function PlanoProducaoPage() {
             </Field>
 
             <Field label="Tempo de impressao (min)">
-              <input value={form.tempo_impressao_min} onChange={(e)=>setForm((f)=>({...f,tempo_impressao_min:e.target.value}))} type="number" min="0" className="field" />
+              <input value={form.tempo_impressao_min}
+                onChange={(e)=>setForm((f)=>({...f,tempo_impressao_min:e.target.value}))}
+                type="number" min="0" className="field"
+                placeholder="Calculado automaticamente dos STLs" />
             </Field>
 
             <Field label="Ordem da fila">

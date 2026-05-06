@@ -97,6 +97,7 @@ export default function Page() {
   const [gramas_filamento_6, setGramas6] = useState("");
   const [gramas_filamento_7, setGramas7] = useState("");
   const [gramas_filamento_8, setGramas8] = useState("");
+  const [tempo_impressao_min, setTempoImpressaoMin] = useState("");
 
   useEffect(() => {
     getJson<OptionsData>("/api/options")
@@ -143,6 +144,7 @@ export default function Page() {
     setGramas6("");
     setGramas7("");
     setGramas8("");
+    setTempoImpressaoMin("");
   }
 
   function fillForEdit(row: Registro) {
@@ -167,6 +169,7 @@ export default function Page() {
     setGramas7(String(row.gramas_filamento_7 ?? ""));
     setGramas8(String(row.gramas_filamento_8 ?? ""));
 
+    setTempoImpressaoMin(String(row.tempo_impressao_min ?? ""));
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -218,6 +221,7 @@ export default function Page() {
         gramas_filamento_6: NumberOrBlank(gramas_filamento_6),
         gramas_filamento_7: NumberOrBlank(gramas_filamento_7),
         gramas_filamento_8: NumberOrBlank(gramas_filamento_8),
+        tempo_impressao_min: tempo_impressao_min ? Number(tempo_impressao_min) : 0,
       };
 
       const method = editingId ? "PUT" : "POST";
@@ -379,6 +383,15 @@ export default function Page() {
           ))}
         </div>
 
+        <div className="mt-4 max-w-xs">
+          <label className="mb-2 block text-sm font-bold text-slate-300">Tempo de impressão (min)</label>
+          <input type="number" min="0" value={tempo_impressao_min}
+            onChange={(e) => setTempoImpressaoMin(e.target.value)}
+            placeholder="Ex.: 51"
+            className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none focus:border-cyan-400" />
+          <p className="mt-1 text-xs text-slate-500">Tempo total para imprimir este STL</p>
+        </div>
+
         <div className="mt-5 flex gap-3">
           <button
             disabled={salvando}
@@ -427,6 +440,7 @@ export default function Page() {
                   <th className="px-3 py-3">G1</th>
                   <th className="px-3 py-3">Filamento 2</th>
                   <th className="px-3 py-3">G2</th>
+                  <th className="px-3 py-3">Tempo (min)</th>
                   <th className="px-3 py-3">Ações</th>
                 </tr>
               </thead>
@@ -439,6 +453,7 @@ export default function Page() {
                     <td className="px-3 py-3">{row.gramas_filamento_1 ?? ""}</td>
                     <td className="px-3 py-3">{labelFilamentoPorId(row.id_filamento2)}</td>
                     <td className="px-3 py-3">{row.gramas_filamento_2 ?? ""}</td>
+                    <td className="px-3 py-3 text-cyan-300">{row.tempo_impressao_min ? `${row.tempo_impressao_min} min` : "-"}</td>
                     <td className="px-3 py-3">
                       <ActionButtons
                         onEdit={() => fillForEdit(row)}

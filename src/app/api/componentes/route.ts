@@ -3,8 +3,8 @@ import { supabaseAdmin as supabase } from "../../../lib/supabase";
 
 const TABLE = "cadastro_componentes";
 const ID_COL = "id_componente_stl";
-const FIELDS = ["nome_componente", "id_filamento1", "id_filamento2", "id_filamento3", "id_filamento4", "id_filamento5", "id_filamento6", "id_filamento7", "id_filamento8", "gramas_filamento_1", "gramas_filamento_2", "gramas_filamento_3", "gramas_filamento_4", "gramas_filamento_5", "gramas_filamento_6", "gramas_filamento_7", "gramas_filamento_8"];
-const NUMERIC = ["id_filamento1", "id_filamento2", "id_filamento3", "id_filamento4", "id_filamento5", "id_filamento6", "id_filamento7", "id_filamento8", "gramas_filamento_1", "gramas_filamento_2", "gramas_filamento_3", "gramas_filamento_4", "gramas_filamento_5", "gramas_filamento_6", "gramas_filamento_7", "gramas_filamento_8"];
+const FIELDS = ["nome_componente", "id_filamento1", "id_filamento2", "id_filamento3", "id_filamento4", "id_filamento5", "id_filamento6", "id_filamento7", "id_filamento8", "gramas_filamento_1", "gramas_filamento_2", "gramas_filamento_3", "gramas_filamento_4", "gramas_filamento_5", "gramas_filamento_6", "gramas_filamento_7", "gramas_filamento_8", "tempo_impressao_min"];
+const NUMERIC = ["id_filamento1", "id_filamento2", "id_filamento3", "id_filamento4", "id_filamento5", "id_filamento6", "id_filamento7", "id_filamento8", "gramas_filamento_1", "gramas_filamento_2", "gramas_filamento_3", "gramas_filamento_4", "gramas_filamento_5", "gramas_filamento_6", "gramas_filamento_7", "gramas_filamento_8", "tempo_impressao_min"];
 
 function sanitize(body: Record<string, unknown>) {
   const payload: Record<string, unknown> = {};
