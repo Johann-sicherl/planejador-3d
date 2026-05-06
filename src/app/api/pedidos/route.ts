@@ -8,13 +8,12 @@ const ID_COL = "id_pedido";
 // A impressora passa a ser definida somente no Plano de Produção.
 const FIELDS = [
   "id_cliente",
-  "id_3mf",
   "data_solic",
   "data_entrega_prevista",
   "data_entrega_realizada",
 ];
 
-const NUMERIC = ["id_cliente", "id_3mf"];
+const NUMERIC = ["id_cliente"];
 
 type Body = Record<string, unknown>;
 
@@ -39,7 +38,7 @@ function sanitize(body: Body) {
 export async function GET() {
   const { data: rawData, error } = await supabase
     .from(TABLE)
-    .select("id_pedido, id_cliente, id_3mf, data_solic, data_entrega_prevista, data_entrega_realizada")
+    .select("id_pedido, id_cliente, data_solic, data_entrega_prevista, data_entrega_realizada")
     .order(ID_COL, { ascending: true });
 
   // Deduplica por id_pedido caso o Supabase expanda FK automaticamente

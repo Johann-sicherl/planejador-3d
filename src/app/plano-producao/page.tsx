@@ -34,11 +34,13 @@ type OptionsPayload = {
   clientes: OptionItem[]; impressoras: OptionItem[]; componentes: OptionItem[];
   arquivos3mf: OptionItem[]; filamentos: OptionItem[]; pedidos: OptionItem[];
   execucoes: OptionItem[]; planoProducao: OptionItem[]; estoque?: OptionItem[];
+  pedido3mfs?: OptionItem[];
 };
 
 type Nomes = {
   pedidos: Map<number, string>; clientes: Map<number, string>;
   impressoras: Map<number, string>; arquivos3mf: Map<number, string>;
+  pedido3mfs: Map<number, number[]>;
 };
 
 type FormState = {
@@ -189,17 +191,26 @@ export default function PlanoProducaoPage() {
     for (const i of options?.clientes||[]) clientes.set(Number(i.id_cliente),labelFrom(i,["nome_cliente","cliente","nome"],"Cliente sem nome"));
     for (const i of options?.impressoras||[]) impressoras.set(Number(i.id_impressora),labelFrom(i,["nome_impressora","nome","modelo"],"Impressora sem nome"));
     for (const i of options?.arquivos3mf||[]) { const id=Number(i.id_3mf); if(!arquivos3mf.has(id)) arquivos3mf.set(id,labelFrom(i,["nome_arquivo_3mf","nome_arquivo","filename"],"Arquivo 3MF sem nome")); }
+    const pedido3mfs=new Map<number,number[]>();
+    for (const i of options?.pedido3mfs||[]) {
+      const idPed=Number(i.id_pedido); const id3mf=Number(i.id_3mf);
+      if(!pedido3mfs.has(idPed)) pedido3mfs.set(idPed,[]);
+      pedido3mfs.get(idPed)!.push(id3mf);
+    }
     for (const i of options?.pedidos||[]) pedidos.set(Number(i.id_pedido),labelFrom(i,["label_pedido","nome_pedido","numero_pedido"],"Pedido cadastrado"));
-    return {pedidos,clientes,impressoras,arquivos3mf};
+    return {pedidos,clientes,impressoras,arquivos3mf,pedido3mfs};
   },[options]);
 
   function avaliarEstoque(idPedStr:string,id3mfStr?:string) {
     if (!options||!idPedStr) { setAlertaEstoque(null); return; }
     const ped=(options.pedidos||[]).find((i)=>String(i.id_pedido)===idPedStr);
-    const id3mf=Number(id3mfStr||ped?.id_3mf||"");
+    const id3mfStr2=id3mfStr||String(ped?.id_3mf||"");
+    const ids3mfPed=(nomes.pedido3mfs.get(Number(idPedStr))||[]);
+    const ids3mfAvalia = ids3mfPed.length>0 ? ids3mfPed :
+      (id3mfStr2 ? [Number(id3mfStr2)] : []);
 
-    // Busca TODAS as linhas do 3MF (uma por STL) — não apenas a primeira
-    const linhas3mf=(options.arquivos3mf||[]).filter((i)=>Number(i.id_3mf)===id3mf);
+    // Busca TODAS as linhas de TODOS os 3MFs do pedido
+    const linhas3mf=(options.arquivos3mf||[]).filter((i)=>ids3mfAvalia.includes(Number(i.id_3mf)));
     if (!linhas3mf.length) { setAlertaEstoque({tipo:"aviso",texto:"Pedido sem Arquivo 3MF — estoque nao validado."}); return; }
 
     // Mapa de estoque total por filamento
@@ -300,7 +311,8 @@ export default function PlanoProducaoPage() {
     const novoStatus = ORDEM_COLUNAS[idxNovo];
 
     // Ao avançar para finalizado, abre o modal de seleção de carreteis
-    if (novoStatus === "finalizado" && planoAtual.id_3mf && options) {
+    const ids3mfMover = nomes.pedido3mfs.get(Number(idPedido)) || (planoAtual.id_3mf?[Number(planoAtual.id_3mf)]:[]);
+    if (novoStatus === "finalizado" && ids3mfMover.length > 0 && options) {
       const fakeEvent = { active: { id: String(idPedido) }, over: { id: "finalizado" } };
       await handleDragEnd(fakeEvent as any);
       return;
@@ -344,8 +356,9 @@ export default function PlanoProducaoPage() {
     const planoAtual=planos.find((p)=>p.id_pedido===idPedido);
     if (!planoAtual||planoAtual.status_producao===destino) return;
 
-    if (destino==="falha" && planoAtual.id_3mf && options) {
-      const linhas3mf=(options.arquivos3mf||[]).filter((a)=>Number(a.id_3mf)===Number(planoAtual.id_3mf));
+    const ids3mfFalha = nomes.pedido3mfs.get(Number(idPedido)) || (planoAtual.id_3mf?[Number(planoAtual.id_3mf)]:[]);
+    if (destino==="falha" && ids3mfFalha.length > 0 && options) {
+      const linhas3mf=(options.arquivos3mf||[]).filter((a)=>ids3mfFalha.includes(Number(a.id_3mf)));
       const slots:SlotFilamento[]=[];
       for (const linha of linhas3mf) {
         const comp=(options.componentes||[]).find((c)=>Number(c.id_componente_stl)===Number(linha.id_componente_stl));
@@ -372,9 +385,10 @@ export default function PlanoProducaoPage() {
     }
 
     // Ao mover para finalizado → abre modal de seleção de carreteis
-    if (destino === "finalizado" && planoAtual.id_3mf && options) {
-      // Monta slots de filamento a partir do 3MF → componentes
-      const linhas3mf = (options.arquivos3mf || []).filter((a) => Number(a.id_3mf) === Number(planoAtual.id_3mf));
+    const ids3mfFin = nomes.pedido3mfs.get(Number(idPedido)) || (planoAtual.id_3mf?[Number(planoAtual.id_3mf)]:[]);
+    if (destino === "finalizado" && ids3mfFin.length > 0 && options) {
+      // Monta slots de filamento a partir de TODOS os 3MFs do pedido
+      const linhas3mf = (options.arquivos3mf || []).filter((a) => ids3mfFin.includes(Number(a.id_3mf)));
       const slots: SlotFilamento[] = [];
       for (const linha of linhas3mf) {
         const comp = (options.componentes || []).find((c) => Number(c.id_componente_stl) === Number(linha.id_componente_stl));
@@ -999,17 +1013,36 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
 
             {/* Detalhes: 3MF + Tempo */}
             <div className="space-y-1.5 rounded-xl bg-black/20 px-3 py-2 text-xs text-slate-300">
-              <div className="flex items-center gap-2">
-                <Factory className="h-3.5 w-3.5 shrink-0 text-violet-300"/>
-                <span className="truncate">{plano.id_3mf?nomes.arquivos3mf.get(Number(plano.id_3mf)):"Arquivo 3MF nao definido"}</span>
-              </div>
+              {/* Lista todos os 3MFs do pedido */}
+              {(()=>{
+                const ids3mfDoPedido=nomes.pedido3mfs.get(Number(plano.id_pedido))||
+                  (plano.id_3mf?[Number(plano.id_3mf)]:[]);
+                if(!ids3mfDoPedido.length) return (
+                  <div className="flex items-center gap-2">
+                    <Factory className="h-3.5 w-3.5 shrink-0 text-violet-300"/>
+                    <span className="text-slate-500">Arquivo 3MF nao definido</span>
+                  </div>
+                );
+                return (
+                  <div className="space-y-0.5">
+                    {ids3mfDoPedido.map((id3mf)=>(
+                      <div key={id3mf} className="flex items-center gap-2">
+                        <Factory className="h-3.5 w-3.5 shrink-0 text-violet-300"/>
+                        <span className="truncate">{nomes.arquivos3mf.get(id3mf)||`3MF ${id3mf}`}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
               <div className="flex items-center gap-2">
                 <Clock className="h-3.5 w-3.5 shrink-0 text-cyan-300"/>
                 <span>{formatTempo(plano.tempo_impressao_min)}</span>
               </div>
-              {/* STLs com checkboxes de concluido e falha */}
-              {plano.id_3mf&&options&&(()=>{
-                const linhas=(options.arquivos3mf||[]).filter((a)=>Number(a.id_3mf)===Number(plano.id_3mf));
+              {/* STLs com checkboxes de concluido e falha — todos os 3MFs do pedido */}
+              {options&&(()=>{
+                const ids3mfDoPedido=nomes.pedido3mfs.get(Number(plano.id_pedido))||
+                  (plano.id_3mf?[Number(plano.id_3mf)]:[]);
+                const linhas=(options.arquivos3mf||[]).filter((a)=>ids3mfDoPedido.includes(Number(a.id_3mf)));
                 if(!linhas.length) return null;
                 return (
                   <div className="mt-1.5 border-t border-white/10 pt-1.5 space-y-1.5">
