@@ -34,8 +34,8 @@ type OptionsPayload = {
   clientes: OptionItem[]; impressoras: OptionItem[]; componentes: OptionItem[];
   arquivos3mf: OptionItem[]; filamentos: OptionItem[]; pedidos: OptionItem[];
   execucoes: OptionItem[]; planoProducao: OptionItem[]; estoque?: OptionItem[];
-  pedido3mfs?: OptionItem[];
-  compImpressoras?: OptionItem[];
+  pedido3mfs?: OptionItem[]; compImpressoras?: OptionItem[];
+  fabricantesFilamentos?: OptionItem[];
 };
 
 type Nomes = {
@@ -238,7 +238,12 @@ export default function PlanoProducaoPage() {
         const g=numField(comp,[`gramas_filamento_${n}`,`gramas_filamento${n}`]);
         if (idF===null||g===null||g<=0) continue;
         const fil=(options.filamentos||[]).find((i)=>Number(i.id_filamento)===idF);
-        const label=labelFrom(fil,["nome_filamento","nome"],`Filamento ${idF}`);
+        const nomeFil=fil?String(fil.nome_filamento??`Filamento ${idF}`):`Filamento ${idF}`;
+        const corFil=fil?.cor_filamento?` · ${String(fil.cor_filamento)}`:"";
+        const idFab=fil?.id_fabricante_filamento;
+        const fabRow=idFab?(options.fabricantesFilamentos||[]).find((x)=>Number(x.id_fabricante_filamento)===Number(idFab)):null;
+        const fabFil=fabRow?` · ${String(fabRow.nome_fabricante??"")}`:"";
+        const label=`${nomeFil}${corFil}${fabFil}`;
         const totalNec=Number((g*qtdComp).toFixed(3));
         const prev=necMap.get(idF);
         necMap.set(idF,{
