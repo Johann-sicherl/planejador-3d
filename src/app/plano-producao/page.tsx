@@ -835,20 +835,45 @@ export default function PlanoProducaoPage() {
               <input value={form.peso_estimado_g} onChange={(e)=>setForm((f)=>({...f,peso_estimado_g:e.target.value}))} type="number" min="0" step="0.001" placeholder="Calculado automaticamente" className="field" />
             </Field>
 
-            {alertaEstoque && (
-              <div className={`xl:col-span-4 rounded-2xl border px-4 py-3 text-sm ${alertaEstoque.tipo==="ok"?"border-emerald-500/30 bg-emerald-500/10":alertaEstoque.tipo==="erro"?"border-red-500/30 bg-red-500/10":"border-amber-500/30 bg-amber-500/10"}`}>
-                <div className={`mb-2 flex items-center gap-2 font-bold ${alertaEstoque.tipo==="ok"?"text-emerald-300":alertaEstoque.tipo==="erro"?"text-red-300":"text-amber-300"}`}>
-                  <span>{alertaEstoque.tipo==="ok"?"✅":alertaEstoque.tipo==="erro"?"🚫":"⚠️"}</span>
-                  <span>{alertaEstoque.texto}</span>
-                </div>
-                {alertaEstoque.itens&&alertaEstoque.itens.length>0&&(
-                  <div className="grid grid-cols-2 gap-1 md:grid-cols-3 xl:grid-cols-4">
-                    {alertaEstoque.itens.map((it,i)=>(
-                      <div key={i} className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-xs ${it.ok?"bg-emerald-500/10 text-emerald-300":"bg-red-500/10 text-red-300"}`}>
-                        <span className="truncate font-bold">{it.label}</span>
-                        <span className="shrink-0 font-mono whitespace-nowrap">{it.necessario}g {it.ok?"✓":`✗ ${it.disponivel}g disp.`}</span>
-                      </div>
-                    ))}
+            {alertaEstoque&&alertaEstoque.itens&&(
+              <div className="xl:col-span-4 space-y-3">
+                {/* Bloco insuficientes */}
+                {alertaEstoque.itens.filter(it=>!it.ok).length>0&&(
+                  <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-2 font-bold text-red-300 text-sm">🚫 Estoque insuficiente</span>
+                      <button type="button"
+                        onClick={()=>{
+                          const linhas=alertaEstoque.itens!.filter(it=>!it.ok)
+                            .map(it=>`${it.label}: ${it.necessario}g necessário (disponível: ${it.disponivel}g)`);
+                          navigator.clipboard.writeText(linhas.join("\n"));
+                        }}
+                        className="rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-1 text-xs font-bold text-red-300 hover:bg-red-400/20">
+                        📋 Copiar lista de compras
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1 md:grid-cols-3 xl:grid-cols-4">
+                      {alertaEstoque.itens.filter(it=>!it.ok).map((it,i)=>(
+                        <div key={i} className="flex items-center justify-between gap-2 rounded-lg bg-red-500/15 px-2 py-1.5 text-xs text-red-300">
+                          <span className="truncate font-bold">{it.label}</span>
+                          <span className="shrink-0 font-mono whitespace-nowrap">✗ {it.necessario}g / {it.disponivel}g disp.</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Bloco suficientes */}
+                {alertaEstoque.itens.filter(it=>it.ok).length>0&&(
+                  <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+                    <div className="mb-2 font-bold text-emerald-300 text-sm">✅ Estoque suficiente</div>
+                    <div className="grid grid-cols-2 gap-1 md:grid-cols-3 xl:grid-cols-4">
+                      {alertaEstoque.itens.filter(it=>it.ok).map((it,i)=>(
+                        <div key={i} className="flex items-center justify-between gap-2 rounded-lg bg-emerald-500/10 px-2 py-1.5 text-xs text-emerald-300">
+                          <span className="truncate font-bold">{it.label}</span>
+                          <span className="shrink-0 font-mono whitespace-nowrap">✓ {it.necessario}g</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
