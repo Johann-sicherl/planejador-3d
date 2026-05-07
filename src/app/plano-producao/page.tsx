@@ -251,9 +251,11 @@ export default function PlanoProducaoPage() {
 
     const nec=[...necMap.values()];
     if (!nec.length) { setAlertaEstoque({tipo:"aviso",texto:"Nenhum consumo cadastrado para o componente."}); return; }
-    const resumo=nec.map((n)=>`${n.label}: ${n.necessario}g / ${n.disponivel}g disponivel`).join(" | ");
-    const faltante=nec.some((n)=>n.disponivel<n.necessario);
-    setAlertaEstoque(faltante?{tipo:"erro",texto:`Estoque insuficiente. ${resumo}`}:{tipo:"ok",texto:`Estoque suficiente. ${resumo}`});
+    const faltantes=nec.filter((n)=>n.disponivel<n.necessario);
+    const faltante=faltantes.length>0;
+    const resumoErr=faltantes.map((n)=>`${n.label}: ${n.necessario}g necessário / ${n.disponivel}g disponível`).join(" | ");
+    const resumoOk=nec.map((n)=>`${n.label}: ${n.necessario}g / ${n.disponivel}g`).join(" | ");
+    setAlertaEstoque(faltante?{tipo:"erro",texto:`Estoque insuficiente. ${resumoErr}`}:{tipo:"ok",texto:`Estoque suficiente. ${resumoOk}`});
   }
 
   function sugerirImpressora() {
