@@ -173,6 +173,9 @@ export default function Page() {
   // Estoque form
   const [editingEstoqueId, setEditingEstoqueId] = useState<string | null>(null);
   const [idFilamento,      setIdFilamento]       = useState("");
+  // Cascata Nome → Material → Cor para seleção de filamento
+  const [cNome,     setCNome]     = useState("");
+  const [cMaterial, setCMaterial] = useState("");
   const [pesoComCarretelG, setPesoComCarretelG]  = useState("");
   const [idCarretel,       setIdCarretel]         = useState("");
   const [localizacao,      setLocalizacao]        = useState("");
@@ -268,11 +271,15 @@ export default function Page() {
   function resetEstoqueForm() {
     setEditingEstoqueId(null);
     setIdFilamento(""); setPesoComCarretelG(""); setIdCarretel(""); setLocalizacao("");
+    setCNome(""); setCMaterial("");
   }
 
   function fillEstoqueForEdit(row: RegistroEstoque) {
     setEditingEstoqueId(String(row.id_estoque ?? ""));
     setIdFilamento(String(row.id_filamento ?? ""));
+    const filEdit = filamentos.find((f) => f.id_filamento === row.id_filamento);
+    setCNome(filEdit?.nome_filamento ?? "");
+    setCMaterial(filEdit?.material_filamento ?? "");
     setPesoComCarretelG(String(row.peso_com_carretel_g ?? ""));
     setIdCarretel(String(row.id_carretel ?? ""));
     setLocalizacao(String(row.localizacao ?? ""));
@@ -395,16 +402,50 @@ export default function Page() {
         </div>
 
         <form onSubmit={handleEstoqueSubmit} className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div>
-            <label className="mb-2 block text-sm font-bold text-slate-300">Filamento</label>
-            <select value={idFilamento} onChange={(e) => setIdFilamento(e.target.value)} className={FIELD_CLASS} required>
-              <option value="">Selecione</option>
-              {filamentos.map((f) => (
-                <option key={f.id_filamento} value={f.id_filamento}>
-                  {`${f.nome_filamento} - ${f.material_filamento} - ${f.cor_filamento}`}
-                </option>
-              ))}
-            </select>
+          {/* Cascata: Nome → Material → Cor */}
+          <div className="space-y-2">
+            {/* 1. Nome */}
+            <div>
+              <label className="mb-1 block text-sm font-bold text-slate-300">Filamento — Nome</label>
+              <select value={cNome}
+                onChange={(e) => { setCNome(e.target.value); setCMaterial(""); setIdFilamento(""); }}
+                className={FIELD_CLASS} required>
+                <option value="">Selecione o nome</option>
+                {[...new Set(filamentos.map((f) => f.nome_filamento))].sort().map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+            {/* 2. Material */}
+            {cNome && (
+              <div>
+                <label className="mb-1 block text-sm font-bold text-slate-300">Material</label>
+                <select value={cMaterial}
+                  onChange={(e) => { setCMaterial(e.target.value); setIdFilamento(""); }}
+                  className={FIELD_CLASS}>
+                  <option value="">Selecione o material</option>
+                  {[...new Set(filamentos.filter((f) => f.nome_filamento === cNome).map((f) => f.material_filamento ?? ""))].filter(Boolean).sort().map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {/* 3. Cor */}
+            {cNome && cMaterial && (
+              <div>
+                <label className="mb-1 block text-sm font-bold text-slate-300">Cor</label>
+                <select value={idFilamento}
+                  onChange={(e) => setIdFilamento(e.target.value)}
+                  className={FIELD_CLASS} required>
+                  <option value="">Selecione a cor</option>
+                  {filamentos.filter((f) => f.nome_filamento === cNome && f.material_filamento === cMaterial).map((f) => (
+                    <option key={f.id_filamento} value={f.id_filamento}>
+                      {f.cor_filamento || "Sem cor"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           <div>
