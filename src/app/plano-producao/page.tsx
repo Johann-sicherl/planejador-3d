@@ -875,7 +875,7 @@ export default function PlanoProducaoPage() {
                       {alertaEstoque.itens.filter(it=>it.ok).map((it,i)=>(
                         <div key={i} className="flex items-center justify-between gap-2 rounded-lg bg-emerald-500/10 px-2 py-1.5 text-xs text-emerald-300">
                           <span className="truncate font-bold">{it.label}</span>
-                          <span className="shrink-0 font-mono whitespace-nowrap">✓ {it.necessario}g</span>
+                          <span className="shrink-0 font-mono whitespace-nowrap">✓ {it.necessario}g / {it.disponivel}g disp.</span>
                         </div>
                       ))}
                     </div>
