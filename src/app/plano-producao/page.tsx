@@ -158,7 +158,7 @@ export default function PlanoProducaoPage() {
   const [editingId,setEditingId]=useState<number|null>(null);
   const [form,setForm]=useState<FormState>(EMPTY_FORM);
   const [activePlano,setActivePlano]=useState<PlanoProducao|null>(null);
-  const [alertaEstoque,setAlertaEstoque]=useState<{tipo:"ok"|"erro"|"aviso";texto:string;itens?:{label:string;necessario:number;disponivel:number;ok:boolean}[]}|null>(null);
+  const [alertaEstoque,setAlertaEstoque]=useState<{tipo:"ok"|"erro"|"aviso";texto:string;itens?:{label:string;necessario:number;disponivel:number;localizacao:string;ok:boolean}[]}|null>(null);
   const [falhaEmAndamento,setFalhaEmAndamento]=useState<FalhaEmAndamento|null>(null);
   // Modal de sugestão de impressora ao selecionar pedido
   const [sugestaoImp,setSugestaoImp]=useState<{idImpressora:number;nomeImpressora:string;tempoMin:number}|null>(null);
@@ -216,15 +216,21 @@ export default function PlanoProducaoPage() {
     const linhas3mf=(options.arquivos3mf||[]).filter((i)=>ids3mfAvalia.includes(Number(i.id_3mf)));
     if (!linhas3mf.length) { setAlertaEstoque({tipo:"aviso",texto:"Pedido sem Arquivo 3MF — estoque nao validado."}); return; }
 
-    // Mapa de estoque total por filamento
-    const estoqueMap=new Map<number,number>();
+
+    // Monta lista de carreteis individuais por id_filamento
+    const carreteisPorFil=new Map<number,{qtd:number;localizacao:string}[]>();
     for (const i of options.estoque||[]) {
-      const idF=numField(i,["id_filamento"]); const qtd=numField(i,["qtd_estoque_gramas","quantidade","qtd"]);
-      if (idF!==null&&qtd!==null) estoqueMap.set(idF,(estoqueMap.get(idF)||0)+qtd);
+      const idF=numField(i,["id_filamento"]);
+      const qtd=numField(i,["qtd_estoque_gramas","quantidade","qtd"]);
+      const loc=String(i.localizacao??"");
+      if (idF!==null&&qtd!==null) {
+        if (!carreteisPorFil.has(idF)) carreteisPorFil.set(idF,[]);
+        carreteisPorFil.get(idF)!.push({qtd:Number(qtd),localizacao:loc});
+      }
     }
 
-    // Acumula necessidade de cada filamento somando todos os STLs do 3MF
-    const necMap=new Map<number,{necessario:number;disponivel:number;label:string}>();
+    // Acumula necessidade de cada filamento somando todos os STLs
+    const necMap=new Map<number,{necessario:number;label:string}>();
     for (const arq of linhas3mf) {
       const idComp=numField(arq,["id_componente_stl","id_componente","componente_id"]);
       const qtdComp=numField(arq,["qtd_componente","quantidade_componentes","qtd","quantidade"])||1;
@@ -242,21 +248,34 @@ export default function PlanoProducaoPage() {
         const corFil=fil?.cor_filamento?` · ${String(fil.cor_filamento)}`:"";
         const idFab=fil?.id_fabricante_filamento;
         const fabRow=idFab?(options.fabricantesFilamentos||[]).find((x)=>Number(x.id_fabricante_filamento)===Number(idFab)):null;
-        const fabFil=fabRow?` · ${String(fabRow.nome_fabricante??"")}`:"";
+        const fabFil=fabRow?` · ${String(fabRow.nome_fabricante??"")}`:""
         const label=`${nomeFil}${corFil}${fabFil}`;
         const totalNec=Number((g*qtdComp).toFixed(3));
         const prev=necMap.get(idF);
-        necMap.set(idF,{
-          necessario: Number(((prev?.necessario||0)+totalNec).toFixed(3)),
-          disponivel: Number((estoqueMap.get(idF)||0).toFixed(3)),
-          label,
-        });
+        necMap.set(idF,{necessario:Number(((prev?.necessario||0)+totalNec).toFixed(3)),label});
       }
     }
 
-    const nec=[...necMap.values()];
+    const nec=[...necMap.entries()];
     if (!nec.length) { setAlertaEstoque({tipo:"aviso",texto:"Nenhum consumo cadastrado para o componente."}); return; }
-    const itens=nec.map((n)=>({label:n.label,necessario:n.necessario,disponivel:n.disponivel,ok:n.disponivel>=n.necessario}));
+
+    // Para cada filamento escolhe o melhor carretel individual:
+    // menor qtd que atende (otimiza uso) ou maior disponível (se nenhum atende)
+    const itens=nec.map(([idF,{necessario,label}])=>{
+      const carreteis=(carreteisPorFil.get(idF)||[]).sort((a,b)=>a.qtd-b.qtd);
+      const suficientes=carreteis.filter(c=>c.qtd>=necessario);
+      const escolhido=suficientes.length>0
+        ? suficientes[0]
+        : carreteis.length>0 ? carreteis[carreteis.length-1]
+        : {qtd:0,localizacao:""};
+      return {
+        label,
+        necessario,
+        disponivel:Number(escolhido.qtd.toFixed(3)),
+        localizacao:escolhido.localizacao,
+        ok:escolhido.qtd>=necessario,
+      };
+    });
     const faltante=itens.some((i)=>!i.ok);
     setAlertaEstoque({tipo:faltante?"erro":"ok",texto:faltante?"Estoque insuficiente":"Estoque suficiente",itens});
   }
@@ -861,7 +880,7 @@ export default function PlanoProducaoPage() {
                       {alertaEstoque.itens.filter(it=>!it.ok).map((it,i)=>(
                         <div key={i} className="flex items-center justify-between gap-2 rounded-lg bg-red-500/15 px-2 py-1.5 text-xs text-red-300">
                           <span className="truncate font-bold">{it.label}</span>
-                          <span className="shrink-0 font-mono whitespace-nowrap">✗ {it.necessario}g / {it.disponivel}g disp.</span>
+                          <span className="shrink-0 font-mono whitespace-nowrap">✗ {it.necessario}g / {it.disponivel}g{it.localizacao?` (${it.localizacao})`:""}</span>
                         </div>
                       ))}
                     </div>
@@ -875,7 +894,7 @@ export default function PlanoProducaoPage() {
                       {alertaEstoque.itens.filter(it=>it.ok).map((it,i)=>(
                         <div key={i} className="flex items-center justify-between gap-2 rounded-lg bg-emerald-500/10 px-2 py-1.5 text-xs text-emerald-300">
                           <span className="truncate font-bold">{it.label}</span>
-                          <span className="shrink-0 font-mono whitespace-nowrap">✓ {it.necessario}g / {it.disponivel}g disp.</span>
+                          <span className="shrink-0 font-mono whitespace-nowrap">✓ {it.necessario}g / {it.disponivel}g{it.localizacao?` (${it.localizacao})`:""}</span>
                         </div>
                       ))}
                     </div>
