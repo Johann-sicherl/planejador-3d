@@ -56,6 +56,7 @@ export async function GET() {
       execucoes,
       planoProducao,
       pedido3mfs,
+      compImpressoras,
     ] = await Promise.all([
       supabase.from("cadastro_clientes").select("*").order("id_cliente", { ascending: true }),
       supabase.from("cadastro_impressoras").select("*").order("id_impressora", { ascending: true }),
@@ -67,6 +68,7 @@ export async function GET() {
       supabase.from("execucao_fabric").select("*").order("id_fila", { ascending: true }),
       supabase.from("plano_producao").select("*").order("id_pedido", { ascending: true }),
       supabase.from("pedido_3mfs").select("id_pedido_3mf, id_pedido, id_3mf").order("id_pedido", { ascending: true }),
+      supabase.from("componente_impressoras").select("id_comp_imp, id_componente_stl, id_impressora, tempo_impressao_min").order("id_componente_stl", { ascending: true }),
     ]);
 
     const errors = [
@@ -75,6 +77,7 @@ export async function GET() {
       componentes.error,
       arquivos3mf.error,
       pedido3mfs.error,
+      compImpressoras.error,
       filamentos.error,
       pedidos.error,
       execucoes.error,
@@ -92,7 +95,8 @@ export async function GET() {
     const impressorasData = safeData(impressoras);
     // Todas as linhas de cadastro_3mf (1 por componente STL)
     const arquivos3mfData = safeData(arquivos3mf);
-    const pedido3mfsData  = safeData(pedido3mfs);
+    const pedido3mfsData      = safeData(pedido3mfs);
+    const compImpressorasData = safeData(compImpressoras);
     const pedidosData = safeData(pedidos);
     const filamentosData = safeData(filamentos);
     const fabricantesFilamentosData = fabricantesFilamentos.error ? [] : safeData(fabricantesFilamentos);
@@ -172,7 +176,8 @@ export async function GET() {
           impressoras: impressorasData,
           componentes: safeData(componentes),
           arquivos3mf: arquivos3mfData,
-          pedido3mfs:  pedido3mfsData,
+          pedido3mfs:          pedido3mfsData,
+          compImpressoras:     compImpressorasData,
           filamentos: filamentosComLabel,
           fabricantesFilamentos: fabricantesFilamentosData,
           pedidos: pedidosComLabel,

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
 import {
   ActionButtons,
   Feedback,
@@ -14,8 +15,18 @@ import {
 
 type Registro = Record<string, any>;
 
+type CompImpressora = {
+  id_comp_imp?: number;
+  id_componente_stl?: number;
+  id_impressora: number;
+  tempo_impressao_min: number;
+};
+
+
 type OptionsData = {
   filamentos?: Registro[];
+  impressoras?: Registro[];
+  compImpressoras?: Registro[];
 };
 
 type CampoFilamento = {
@@ -98,6 +109,7 @@ export default function Page() {
   const [gramas_filamento_7, setGramas7] = useState("");
   const [gramas_filamento_8, setGramas8] = useState("");
   const [tempo_impressao_min, setTempoImpressaoMin] = useState("");
+  const [compImps, setCompImps] = useState<CompImpressora[]>([]);
 
   useEffect(() => {
     getJson<OptionsData>("/api/options")
@@ -238,6 +250,20 @@ export default function Page() {
         throw new Error(result.error || "Erro ao salvar.");
       }
 
+      const idComp = editingId ? Number(editingId) : Number(result.data?.[0]?.id_componente_stl);
+      if (idComp) {
+        await fetch("/api/componente-impressoras?id_componente_stl=" + idComp, { method: "DELETE" });
+        if (compImps.length > 0) {
+          await fetch("/api/componente-impressoras", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(compImps.map((ci) => ({
+              id_componente_stl: idComp,
+              id_impressora: ci.id_impressora,
+              tempo_impressao_min: ci.tempo_impressao_min,
+            }))),
+          });
+        }
+      }
       setMensagem(editingId ? "Registro atualizado com sucesso." : "Registro salvo com sucesso.");
       resetForm();
       await reload();
@@ -383,13 +409,57 @@ export default function Page() {
           ))}
         </div>
 
+        {/* Tempo padrão */}
         <div className="mt-4 max-w-xs">
-          <label className="mb-2 block text-sm font-bold text-slate-300">Tempo de impressão (min)</label>
+          <label className="mb-2 block text-sm font-bold text-slate-300">Tempo padrão de impressão (min)</label>
           <input type="number" min="0" value={tempo_impressao_min}
             onChange={(e) => setTempoImpressaoMin(e.target.value)}
             placeholder="Ex.: 51"
             className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none focus:border-cyan-400" />
-          <p className="mt-1 text-xs text-slate-500">Tempo total para imprimir este STL</p>
+          <p className="mt-1 text-xs text-slate-500">Usado quando não há impressora específica cadastrada</p>
+        </div>
+
+        {/* Tempos por impressora */}
+        <div className="mt-4">
+          <div className="mb-3 flex items-center justify-between">
+            <label className="text-sm font-bold text-slate-300">Tempo por impressora</label>
+            <button type="button"
+              onClick={() => setCompImps((prev) => [...prev, { id_impressora: 0, tempo_impressao_min: 0 }])}
+              className="flex items-center gap-1 rounded-xl border border-violet-400/30 bg-violet-400/10 px-3 py-1.5 text-xs font-bold text-violet-300 hover:bg-violet-400/20">
+              <Plus className="h-3.5 w-3.5" /> Adicionar impressora
+            </button>
+          </div>
+          {compImps.length === 0 && (
+            <p className="text-xs text-slate-500">Nenhuma impressora específica. Será usado o tempo padrão acima.</p>
+          )}
+          <div className="space-y-2">
+            {compImps.map((ci, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <select
+                  value={ci.id_impressora || ""}
+                  onChange={(e) => setCompImps((prev) => prev.map((x, i) => i === idx ? { ...x, id_impressora: Number(e.target.value) } : x))}
+                  className="flex-1 rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2.5 text-slate-100 outline-none focus:border-violet-400">
+                  <option value="">Selecione a impressora</option>
+                  {(options?.impressoras || []).map((imp) => (
+                    <option key={String(imp.id_impressora)} value={String(imp.id_impressora)}>
+                      {String(imp.nome_impressora ?? imp.nome ?? imp.id_impressora)}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number" min="0"
+                  value={ci.tempo_impressao_min || ""}
+                  onChange={(e) => setCompImps((prev) => prev.map((x, i) => i === idx ? { ...x, tempo_impressao_min: Number(e.target.value) } : x))}
+                  placeholder="min"
+                  className="w-24 shrink-0 rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2.5 text-slate-100 outline-none focus:border-violet-400" />
+                <button type="button"
+                  onClick={() => setCompImps((prev) => prev.filter((_, i) => i !== idx))}
+                  className="shrink-0 rounded-xl border border-red-500/30 bg-red-500/10 p-2 text-red-300 hover:bg-red-500/20">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="mt-5 flex gap-3">

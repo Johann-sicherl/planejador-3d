@@ -35,6 +35,7 @@ type OptionsPayload = {
   arquivos3mf: OptionItem[]; filamentos: OptionItem[]; pedidos: OptionItem[];
   execucoes: OptionItem[]; planoProducao: OptionItem[]; estoque?: OptionItem[];
   pedido3mfs?: OptionItem[];
+  compImpressoras?: OptionItem[];
 };
 
 type Nomes = {
@@ -159,6 +160,8 @@ export default function PlanoProducaoPage() {
   const [activePlano,setActivePlano]=useState<PlanoProducao|null>(null);
   const [alertaEstoque,setAlertaEstoque]=useState<{tipo:"ok"|"erro"|"aviso";texto:string}|null>(null);
   const [falhaEmAndamento,setFalhaEmAndamento]=useState<FalhaEmAndamento|null>(null);
+  // Modal de sugestão de impressora ao selecionar pedido
+  const [sugestaoImp,setSugestaoImp]=useState<{idImpressora:number;nomeImpressora:string;tempoMin:number}|null>(null);
   const [falhaCarretelEmAndamento,setFalhaCarretelEmAndamento]=useState<FalhaCarretelEmAndamento|null>(null);
   const [finalizacaoEmAndamento,setFinalizacaoEmAndamento]=useState<FinalizacaoEmAndamento|null>(null);
 
@@ -697,14 +700,69 @@ export default function PlanoProducaoPage() {
             <Field label="Pedido">
               <select value={form.id_pedido} disabled={Boolean(editingId)} required className="field"
                 onChange={(e)=>{
-                  const peso=calcPesoPedido(options,e.target.value);
-                  setForm((f)=>({...f,id_pedido:e.target.value,peso_estimado_g:peso}));
-                  avaliarEstoque(e.target.value);
+                  const idPed=e.target.value;
+                  const peso=calcPesoPedido(options,idPed);
+                  setForm((f)=>({...f,id_pedido:idPed,peso_estimado_g:peso,id_impressora:"",tempo_impressao_min:""}));
+                  avaliarEstoque(idPed);
+                  // Verifica impressora sugerida pelos componentes do pedido
+                  const ids3mfSug=nomes.pedido3mfs.get(Number(idPed))||[];
+                  const linhasSug=(options?.arquivos3mf||[]).filter((a)=>ids3mfSug.includes(Number(a.id_3mf)));
+                  const ciData=options?.compImpressoras||[];
+                  // Pega a primeira impressora encontrada nos componentes
+                  for (const linha of linhasSug) {
+                    const ci=ciData.find((c)=>Number(c.id_componente_stl)===Number(linha.id_componente_stl));
+                    if (ci) {
+                      const imp=(options?.impressoras||[]).find((i)=>Number(i.id_impressora)===Number(ci.id_impressora));
+                      if (imp) {
+                        setSugestaoImp({
+                          idImpressora:Number(ci.id_impressora),
+                          nomeImpressora:String(imp.nome_impressora??imp.nome??ci.id_impressora),
+                          tempoMin:Number(ci.tempo_impressao_min)||0,
+                        });
+                        return;
+                      }
+                    }
+                  }
+                  setSugestaoImp(null);
                 }}>
                 <option value="">Selecione</option>
                 {(options?.pedidos||[]).map((p)=>(<option key={String(p.id_pedido)} value={String(p.id_pedido)}>{labelFrom(p,["label_pedido","nome_pedido","numero_pedido"],"Pedido cadastrado")}</option>))}
               </select>
             </Field>
+
+            {/* Banner de sugestão de impressora */}
+            {sugestaoImp && form.id_pedido && !form.id_impressora && (
+              <div className="md:col-span-2 xl:col-span-4">
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-violet-400/30 bg-violet-400/10 px-4 py-3">
+                  <div className="text-sm">
+                    <span className="font-bold text-violet-300">Impressora sugerida: </span>
+                    <span className="text-white">{sugestaoImp.nomeImpressora}</span>
+                    {sugestaoImp.tempoMin > 0 && (
+                      <span className="ml-2 text-slate-400">— {sugestaoImp.tempoMin} min</span>
+                    )}
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button type="button"
+                      onClick={() => {
+                        setForm((f) => ({
+                          ...f,
+                          id_impressora: String(sugestaoImp.idImpressora),
+                          tempo_impressao_min: sugestaoImp.tempoMin > 0 ? String(sugestaoImp.tempoMin) : f.tempo_impressao_min,
+                        }));
+                        setSugestaoImp(null);
+                      }}
+                      className="rounded-xl bg-violet-500 px-3 py-1.5 text-xs font-black text-white hover:bg-violet-400">
+                      Sim, usar
+                    </button>
+                    <button type="button"
+                      onClick={() => setSugestaoImp(null)}
+                      className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/10">
+                      Não, escolher
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <Field label="Impressora">
               <div className="flex gap-2">
@@ -740,10 +798,29 @@ export default function PlanoProducaoPage() {
             </Field>
 
             <Field label="Tempo de impressao (min)">
-              <input value={form.tempo_impressao_min}
-                onChange={(e)=>setForm((f)=>({...f,tempo_impressao_min:e.target.value}))}
-                type="number" min="0" className="field"
-                placeholder="Calculado automaticamente dos STLs" />
+              {(()=>{
+                // Mostra tempo de referência da impressora selecionada
+                const ids3mfRef=nomes.pedido3mfs.get(Number(form.id_pedido))||[];
+                const linhasRef=(options?.arquivos3mf||[]).filter((a)=>ids3mfRef.includes(Number(a.id_3mf)));
+                let tempoRef=0;
+                for (const l of linhasRef) {
+                  const ci=(options?.compImpressoras||[]).find((c)=>Number(c.id_componente_stl)===Number(l.id_componente_stl)&&Number(c.id_impressora)===Number(form.id_impressora));
+                  const comp=(options?.componentes||[]).find((c)=>Number(c.id_componente_stl)===Number(l.id_componente_stl));
+                  const t=ci?Number(ci.tempo_impressao_min):Number((comp as Record<string,unknown>|undefined)?.tempo_impressao_min||0);
+                  tempoRef+=t*Number(l.qtd_componente||1);
+                }
+                return (
+                  <>
+                    <input value={form.tempo_impressao_min}
+                      onChange={(e)=>setForm((f)=>({...f,tempo_impressao_min:e.target.value}))}
+                      type="number" min="0" className="field"
+                      placeholder={tempoRef>0?`Referência: ${tempoRef} min`:"Calculado automaticamente"} />
+                    {tempoRef>0&&!form.tempo_impressao_min&&(
+                      <p className="mt-1 text-xs text-violet-400">⏱ Referência cadastrada: {tempoRef} min — deixe em branco para usar automaticamente</p>
+                    )}
+                  </>
+                );
+              })()}
             </Field>
 
             <Field label="Ordem da fila">
