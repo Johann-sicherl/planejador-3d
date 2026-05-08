@@ -159,6 +159,12 @@ export default function Page() {
 
     setPesoTotal(pesoTotal > 0 ? pesoTotal : null);
     setCustoMat(custoTotal > 0 ? custoTotal : null);
+
+    // Preenche tempo de impressão convertendo minutos → horas (2 casas decimais)
+    const minutos = Number(comp.tempo_impressao_min ?? 0);
+    if (minutos > 0) {
+      setParams((p) => ({ ...p, tempo_horas: Math.round((minutos / 60) * 100) / 100 }));
+    }
   }, [idComp, options]);
 
   // Faixas calculadas
