@@ -423,41 +423,77 @@ export default function PlanoProducaoPage() {
       return;
     }
 
-    // Ao mover para finalizado → abre modal de seleção de carreteis
+    // Ao mover para finalizado → auto-seleciona melhor carretel e debita direto, sem modal
     const ids3mfFin = nomes.pedido3mfs.get(Number(idPedido)) || (planoAtual.id_3mf?[Number(planoAtual.id_3mf)]:[]);
     if (destino === "finalizado" && ids3mfFin.length > 0 && options) {
-      // Monta slots de filamento a partir de TODOS os 3MFs do pedido
       const linhas3mf = (options.arquivos3mf || []).filter((a) => ids3mfFin.includes(Number(a.id_3mf)));
       const slots: SlotFilamento[] = [];
       for (const linha of linhas3mf) {
         const comp = (options.componentes || []).find((c) => Number(c.id_componente_stl) === Number(linha.id_componente_stl));
         if (!comp) continue;
+        const nomeStl = String(comp.nome_componente ?? `STL ${linha.id_componente_stl}`);
         for (let i = 1; i <= 8; i++) {
           const idFil  = Number((comp as Record<string,unknown>)[`id_filamento${i}`] || 0);
           const gramas = Number((comp as Record<string,unknown>)[`gramas_filamento_${i}`] || 0);
           if (!idFil || gramas <= 0) continue;
           const fil = (options.filamentos || []).find((f) => Number(f.id_filamento) === idFil);
-          const nomeFil = String(fil?.nome_filamento ?? fil?.nome ?? `Filamento ${idFil}`);
+          const nomeFil = String(fil?.nome_filamento ?? `Filamento ${idFil}`);
           const cor = fil?.cor_filamento ? ` ${fil.cor_filamento}` : "";
-          // Pré-seleciona o estoque com mais gramas para esse filamento
+          const necessario = gramas * Number(linha.qtd_componente || 1);
+          // Auto-seleciona: menor carretel suficiente; se nenhum for suficiente, o maior disponível
           const estoqueDisp = (options.estoque || [])
             .filter((e) => Number(e.id_filamento) === idFil)
-            .sort((a, b) => Number(b.qtd_estoque_gramas || 0) - Number(a.qtd_estoque_gramas || 0));
-          // Nome do STL/componente para exibição
-          const nomeStl = String((options.componentes||[]).find((c)=>Number(c.id_componente_stl)===Number(linha.id_componente_stl))?.nome_componente ?? `STL ${linha.id_componente_stl}`);
+            .sort((a, b) => Number(a.qtd_estoque_gramas || 0) - Number(b.qtd_estoque_gramas || 0));
+          const suficientes = estoqueDisp.filter((e) => Number(e.qtd_estoque_gramas || 0) >= necessario);
+          const escolhido = suficientes.length > 0
+            ? suficientes[0]
+            : estoqueDisp.length > 0 ? estoqueDisp[estoqueDisp.length - 1] : null;
+          if (!escolhido) continue;
+          const j = estoqueDisp.indexOf(escolhido);
+          const estKey = `${idFil}_${escolhido.localizacao ?? ""}_${j}`;
           slots.push({
             idFilamento: idFil,
             nomeFilamento: `${nomeFil}${cor}`,
             nomeStl,
-            gramas: gramas * Number(linha.qtd_componente || 1),
+            gramas: necessario,
             gramasPerdido: "",
-            idEstoqueEscolhido: "", // usuario deve escolher explicitamente
+            idEstoqueEscolhido: estKey,
           });
         }
       }
-      // Move card visualmente
+      if (!slots.length) {
+        // Sem filamentos cadastrados — finaliza direto sem debitar
+        setPlanos((prev) => prev.map((p) => p.id_pedido === idPedido ? { ...p, status_producao: "finalizado", progresso: 100 } : p));
+        await fetch("/api/plano-producao", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...planoAtual, status_producao: "finalizado", progresso: 100 }) });
+        setMensagem("Pedido finalizado.");
+        return;
+      }
+      // Debita direto, sem abrir modal
       setPlanos((prev) => prev.map((p) => p.id_pedido === idPedido ? { ...p, status_producao: "finalizado", progresso: 100 } : p));
-      setFinalizacaoEmAndamento({ idPedido, statusAnterior: planoAtual.status_producao || "pedidos", slots, salvando: false });
+      setFinalizacaoEmAndamento({ idPedido, statusAnterior: planoAtual.status_producao || "pedidos", slots, salvando: true });
+      try {
+        const r1 = await fetch("/api/plano-producao", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...planoAtual, status_producao: "finalizado", progresso: 100 }) });
+        const d1 = await r1.json();
+        if (!r1.ok || !d1.ok) throw new Error(d1.error || "Erro ao finalizar.");
+        for (const slot of slots) {
+          if (!slot.idEstoqueEscolhido) continue;
+          const parts = slot.idEstoqueEscolhido.split("_");
+          const idFilStr = parts[0];
+          const localizacao = parts.slice(1, -1).join("_");
+          const idx = Number(parts[parts.length - 1]);
+          await fetch("/api/estoque-debito", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id_filamento: Number(idFilStr), localizacao: localizacao || undefined, idx: Number.isNaN(idx) ? 0 : idx, gramas: slot.gramas }),
+          });
+        }
+        setMensagem("Pedido finalizado e estoque debitado automaticamente.");
+        setFinalizacaoEmAndamento(null);
+        await carregarDados();
+      } catch (err) {
+        setPlanos((prev) => prev.map((p) => p.id_pedido === idPedido ? { ...p, status_producao: planoAtual.status_producao || "pedidos" } : p));
+        setErro(err instanceof Error ? err.message : "Erro ao finalizar.");
+        setFinalizacaoEmAndamento(null);
+      }
       return;
     }
 
@@ -1205,7 +1241,6 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                       type ItemFilamento={label:string;necessario:number;disponivel:number;localizacao:string;ok:boolean};
                       const itensFilamento:ItemFilamento[]=[];
                       if (comp) {
-                        // Mapa de carretéis por filamento (mesmo padrão de avaliarEstoque)
                         const carreteisPorFil=new Map<number,{qtd:number;localizacao:string}[]>();
                         for (const e of options.estoque||[]) {
                           const idF=Number(e.id_filamento);
@@ -1240,7 +1275,6 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
 
                       return (
                         <div key={i} className={`rounded-lg transition-colors ${isConcluido?"bg-emerald-500/10":isFalhaStl?"bg-red-500/10":""}`}>
-                          {/* Linha principal do STL */}
                           <div className="flex items-center gap-1.5 px-1.5 py-1">
                             <input type="checkbox" checked={isConcluido}
                               onChange={async ()=>{
@@ -1248,7 +1282,6 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                                 setStlsConcluidos(novo);
                                 const pct=Math.round((novo.length/linhas.length)*100);
                                 onAtualizarProgresso?.(plano.id_pedido,Math.min(pct,100));
-                                // Persiste no banco
                                 await fetch("/api/plano-producao",{
                                   method:"PUT",headers:{"Content-Type":"application/json"},
                                   body:JSON.stringify({...plano,stls_concluidos:novo,progresso:Math.min(pct,100)}),
@@ -1261,7 +1294,6 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                               onChange={()=>setStlsComFalha(isFalhaStl?stlsComFalha.filter(x=>x!==lineId):[...stlsComFalha,lineId])}
                               className="h-3 w-3 accent-red-400 shrink-0 cursor-pointer" title="Com falha"/>
                             <AlertTriangle className={`h-3 w-3 shrink-0 ${isFalhaStl?"text-red-400":"text-slate-700"}`}/>
-                            {/* Botão expandir filamentos — só aparece se há filamentos cadastrados */}
                             {temFilamentos&&(
                               <button
                                 type="button"
@@ -1281,8 +1313,6 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                               </button>
                             )}
                           </div>
-
-                          {/* Painel de filamentos — mesmo visual do alertaEstoque */}
                           {temFilamentos&&isStlExpandido&&(
                             <div className="mx-1.5 mb-1.5 space-y-1">
                               {itensFilamento.filter(it=>!it.ok).length>0&&(
