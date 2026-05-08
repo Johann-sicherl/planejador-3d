@@ -1201,30 +1201,42 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                       const isFalhaStl=stlsComFalha.includes(lineId);
                       const isStlExpandido=stlsExpandidos.has(lineId);
 
-                      // Monta lista de filamentos deste componente
-                      const filamentosDoStl: {idFil:number;nomeFil:string;cor:string;gramas:number;estoques:{qtd:number;localizacao:string;ok:boolean}[]}[] = [];
+                      // Monta itens de filamento no mesmo formato do alertaEstoque
+                      type ItemFilamento={label:string;necessario:number;disponivel:number;localizacao:string;ok:boolean};
+                      const itensFilamento:ItemFilamento[]=[];
                       if (comp) {
+                        // Mapa de carretéis por filamento (mesmo padrão de avaliarEstoque)
+                        const carreteisPorFil=new Map<number,{qtd:number;localizacao:string}[]>();
+                        for (const e of options.estoque||[]) {
+                          const idF=Number(e.id_filamento);
+                          const qtd=Number(e.qtd_estoque_gramas||e.quantidade||e.qtd||0);
+                          const loc=String(e.localizacao??"");
+                          if (idF&&qtd>=0) {
+                            if (!carreteisPorFil.has(idF)) carreteisPorFil.set(idF,[]);
+                            carreteisPorFil.get(idF)!.push({qtd,localizacao:loc});
+                          }
+                        }
                         for (let n=1;n<=8;n++) {
                           const idFil=Number((comp as Record<string,unknown>)[`id_filamento${n}`]||0);
                           const gramas=Number((comp as Record<string,unknown>)[`gramas_filamento_${n}`]||0);
                           if (!idFil||gramas<=0) continue;
                           const fil=(options.filamentos||[]).find((f)=>Number(f.id_filamento)===idFil);
-                          const nomeFil=String(fil?.nome_filamento??`Filamento ${idFil}`);
-                          const cor=fil?.cor_filamento?String(fil.cor_filamento):"";
+                          const nomeFil=fil?String(fil.nome_filamento??`Filamento ${idFil}`):`Filamento ${idFil}`;
+                          const cor=fil?.cor_filamento?` · ${String(fil.cor_filamento)}`:"";
+                          const idFab=fil?.id_fabricante_filamento;
+                          const fabRow=idFab?(options.fabricantesFilamentos||[]).find((x)=>Number(x.id_fabricante_filamento)===Number(idFab)):null;
+                          const fab=fabRow?` · ${String(fabRow.nome_fabricante??"")}`:""
+                          const label=`${nomeFil}${cor}${fab}`;
                           const qtdComp=Number(a.qtd_componente||1);
-                          const gramasTotais=Number((gramas*qtdComp).toFixed(3));
-                          const estoques=(options.estoque||[])
-                            .filter((e)=>Number(e.id_filamento)===idFil)
-                            .sort((x,y)=>Number(y.qtd_estoque_gramas||0)-Number(x.qtd_estoque_gramas||0))
-                            .map((e)=>({
-                              qtd:Number(e.qtd_estoque_gramas||0),
-                              localizacao:String(e.localizacao??""),
-                              ok:Number(e.qtd_estoque_gramas||0)>=gramasTotais,
-                            }));
-                          filamentosDoStl.push({idFil,nomeFil,cor,gramas:gramasTotais,estoques});
+                          const necessario=Number((gramas*qtdComp).toFixed(3));
+                          const carreteis=(carreteisPorFil.get(idFil)||[]).sort((x,y)=>x.qtd-y.qtd);
+                          const suficientes=carreteis.filter(c=>c.qtd>=necessario);
+                          const escolhido=suficientes.length>0?suficientes[0]:carreteis.length>0?carreteis[carreteis.length-1]:{qtd:0,localizacao:""};
+                          itensFilamento.push({label,necessario,disponivel:Number(escolhido.qtd.toFixed(3)),localizacao:escolhido.localizacao,ok:escolhido.qtd>=necessario});
                         }
                       }
-                      const temFilamentos=filamentosDoStl.length>0;
+                      const temFilamentos=itensFilamento.length>0;
+                      const tudoOk=itensFilamento.every(it=>it.ok);
 
                       return (
                         <div key={i} className={`rounded-lg transition-colors ${isConcluido?"bg-emerald-500/10":isFalhaStl?"bg-red-500/10":""}`}>
@@ -1236,6 +1248,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                                 setStlsConcluidos(novo);
                                 const pct=Math.round((novo.length/linhas.length)*100);
                                 onAtualizarProgresso?.(plano.id_pedido,Math.min(pct,100));
+                                // Persiste no banco
                                 await fetch("/api/plano-producao",{
                                   method:"PUT",headers:{"Content-Type":"application/json"},
                                   body:JSON.stringify({...plano,stls_concluidos:novo,progresso:Math.min(pct,100)}),
@@ -1248,7 +1261,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                               onChange={()=>setStlsComFalha(isFalhaStl?stlsComFalha.filter(x=>x!==lineId):[...stlsComFalha,lineId])}
                               className="h-3 w-3 accent-red-400 shrink-0 cursor-pointer" title="Com falha"/>
                             <AlertTriangle className={`h-3 w-3 shrink-0 ${isFalhaStl?"text-red-400":"text-slate-700"}`}/>
-                            {/* Botão expandir filamentos */}
+                            {/* Botão expandir filamentos — só aparece se há filamentos cadastrados */}
                             {temFilamentos&&(
                               <button
                                 type="button"
@@ -1261,49 +1274,43 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                                     return next;
                                   });
                                 }}
-                                className="shrink-0 rounded-md bg-violet-500/20 p-0.5 text-violet-400 hover:bg-violet-500/40 hover:text-violet-200 transition-colors"
+                                className={`shrink-0 rounded-md p-0.5 transition-colors ${tudoOk?"bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/40":"bg-red-500/20 text-red-400 hover:bg-red-500/40"}`}
                                 title={isStlExpandido?"Ocultar filamentos":"Ver filamentos necessários"}
                               >
-                                {isStlExpandido
-                                  ? <ChevronUp className="h-3 w-3"/>
-                                  : <ChevronDown className="h-3 w-3"/>}
+                                {isStlExpandido?<ChevronUp className="h-3 w-3"/>:<ChevronDown className="h-3 w-3"/>}
                               </button>
                             )}
                           </div>
 
-                          {/* Painel de filamentos expandido */}
+                          {/* Painel de filamentos — mesmo visual do alertaEstoque */}
                           {temFilamentos&&isStlExpandido&&(
-                            <div className="mx-1.5 mb-1.5 rounded-lg border border-violet-500/20 bg-violet-500/5 px-2 py-2 space-y-1.5">
-                              <p className="text-[10px] font-black uppercase tracking-wide text-violet-400/70">Filamentos necessários</p>
-                              {filamentosDoStl.map((fil,fi)=>{
-                                const melhorEstoque=fil.estoques[0];
-                                const temEstoque=fil.estoques.length>0;
-                                const estoqueOk=melhorEstoque?.ok;
-                                return (
-                                  <div key={fi} className="space-y-1">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className={`h-2 w-2 shrink-0 rounded-full ${estoqueOk?"bg-emerald-400":temEstoque?"bg-amber-400":"bg-red-400"}`}/>
-                                      <span className="flex-1 text-[11px] font-bold text-slate-200 truncate">
-                                        {fil.nomeFil}{fil.cor?<span className="font-normal text-slate-400"> · {fil.cor}</span>:null}
-                                      </span>
-                                      <span className="shrink-0 text-[10px] font-bold text-cyan-300">{fil.gramas}g</span>
-                                    </div>
-                                    {temEstoque?(
-                                      <div className="ml-3.5 space-y-0.5">
-                                        {fil.estoques.map((est,ei)=>(
-                                          <div key={ei} className={`flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[10px] ${est.ok?"text-emerald-300/80":"text-amber-300/80"}`}>
-                                            <span>{est.ok?"✅":"⚠️"}</span>
-                                            <span className="font-semibold">{est.qtd}g</span>
-                                            {est.localizacao&&<span className="text-slate-500">· {est.localizacao}</span>}
-                                          </div>
-                                        ))}
+                            <div className="mx-1.5 mb-1.5 space-y-1">
+                              {itensFilamento.filter(it=>!it.ok).length>0&&(
+                                <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-1.5">
+                                  <p className="mb-1 text-[10px] font-black text-red-300">🚫 Estoque insuficiente</p>
+                                  <div className="space-y-0.5">
+                                    {itensFilamento.filter(it=>!it.ok).map((it,j)=>(
+                                      <div key={j} className="flex items-center justify-between gap-2 rounded bg-red-500/15 px-1.5 py-1 text-[11px] text-red-300">
+                                        <span className="truncate font-bold">{it.label}</span>
+                                        <span className="shrink-0 font-mono whitespace-nowrap">✗ {it.necessario}g / {it.disponivel}g{it.localizacao?` (${it.localizacao})`:""}</span>
                                       </div>
-                                    ):(
-                                      <p className="ml-3.5 text-[10px] text-red-400">🚫 Sem estoque cadastrado</p>
-                                    )}
+                                    ))}
                                   </div>
-                                );
-                              })}
+                                </div>
+                              )}
+                              {itensFilamento.filter(it=>it.ok).length>0&&(
+                                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5">
+                                  <p className="mb-1 text-[10px] font-black text-emerald-300">✅ Estoque suficiente</p>
+                                  <div className="space-y-0.5">
+                                    {itensFilamento.filter(it=>it.ok).map((it,j)=>(
+                                      <div key={j} className="flex items-center justify-between gap-2 rounded bg-emerald-500/10 px-1.5 py-1 text-[11px] text-emerald-300">
+                                        <span className="truncate font-bold">{it.label}</span>
+                                        <span className="shrink-0 font-mono whitespace-nowrap">✓ {it.necessario}g / {it.disponivel}g{it.localizacao?` (${it.localizacao})`:""}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
