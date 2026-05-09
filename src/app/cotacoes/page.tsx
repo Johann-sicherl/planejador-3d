@@ -107,13 +107,14 @@ export default function Page() {
   const { data, loading, erro, setErro, reload } =
     useCrudList<Registro>("/api/cotacoes");
 
-  const [options,  setOptions]  = useState<{ componentes: OItem[]; impressoras: OItem[]; filamentos: OItem[] } | null>(null);
+  const [options,  setOptions]  = useState<{ componentes: OItem[]; impressoras: OItem[]; filamentos: OItem[]; pedidos: OItem[]; pedido3mfs: OItem[]; arquivos3mf: OItem[] } | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [mensagem, setMensagem] = useState("");
 
   // Seleção de contexto
-  const [idComp,  setIdComp]  = useState("");
-  const [idImp,   setIdImp]   = useState("");
+  const [idComp,   setIdComp]   = useState("");
+  const [idPedido, setIdPedido] = useState("");
+  const [idImp,    setIdImp]    = useState("");
 
   // Parâmetros (editáveis pelo usuário, pré-preenchidos do banco quando possível)
   const [params, setParams] = useState<Params>(PARAMS_DEFAULT);
@@ -167,7 +168,62 @@ export default function Page() {
     }
   }, [idComp, options]);
 
-  // Faixas calculadas
+  // Quando pedido muda → soma filamentos × qtd de todos os STLs de todos os 3MFs
+  useEffect(() => {
+    if (!idPedido || !options) { if (!idComp) { setCustoMat(null); setPesoTotal(null); } return; }
+    if (idComp) return; // se componente está selecionado, ele tem prioridade
+
+    // ids dos 3MFs deste pedido
+    const ids3mf = (options.pedido3mfs || [])
+      .filter((p) => String(p.id_pedido) === idPedido)
+      .map((p) => Number(p.id_3mf));
+
+    if (!ids3mf.length) { setCustoMat(null); setPesoTotal(null); return; }
+
+    // linhas do cadastro_3mf (cada linha = 1 STL dentro de 1 3MF)
+    const linhas = (options.arquivos3mf || []).filter((a) => ids3mf.includes(Number(a.id_3mf)));
+
+    let pesoAcc  = 0;
+    let custoAcc = 0;
+    let tempoAcc = 0;
+
+    for (const linha of linhas) {
+      const comp = (options.componentes || []).find(
+        (c) => Number(c.id_componente_stl) === Number(linha.id_componente_stl)
+      );
+      if (!comp) continue;
+      const qtd = Number(linha.qtd_componente ?? 1);
+
+      for (let i = 1; i <= 8; i++) {
+        const idFil  = Number(comp[`id_filamento${i}`] ?? 0);
+        const gramas = Number(comp[`gramas_filamento_${i}`] ?? 0);
+        if (!idFil || gramas <= 0) continue;
+        const fil = (options.filamentos || []).find((f) => Number(f.id_filamento) === idFil);
+        const custoKg = fil ? Number(fil.custo_medio_brl) || 0 : 0;
+        pesoAcc  += gramas * qtd;
+        custoAcc += (gramas / 1000) * custoKg * qtd;
+      }
+
+      const minutos = Number(comp.tempo_impressao_min ?? 0);
+      tempoAcc += (minutos / 60) * qtd;
+    }
+
+    setPesoTotal(pesoAcc > 0 ? Math.round(pesoAcc * 1000) / 1000 : null);
+    setCustoMat(custoAcc > 0 ? Math.round(custoAcc * 1000) / 1000 : null);
+    if (tempoAcc > 0) {
+      setParams((p) => ({ ...p, tempo_horas: Math.round(tempoAcc * 100) / 100 }));
+    }
+  }, [idPedido, idComp, options]);
+  function handleSelectComp(v: string) {
+    setIdComp(v);
+    if (v) { setIdPedido(""); }
+  }
+
+  function handleSelectPedido(v: string) {
+    setIdPedido(v);
+    if (v) { setIdComp(""); setCustoMat(null); setPesoTotal(null); }
+  }
+
   const faixas: Faixa[] = (custoMat !== null && params.tempo_horas > 0)
     ? calcularFaixas(custoMat, params)
     : [];
@@ -248,11 +304,26 @@ export default function Page() {
 
             <div>
               <label className="mb-2 block text-sm font-bold text-slate-300">Componente STL *</label>
-              <select value={idComp} onChange={(e) => setIdComp(e.target.value)} className={FIELD}>
+              <select value={idComp} onChange={(e) => handleSelectComp(e.target.value)} className={FIELD}>
                 <option value="">Selecione</option>
                 {(options?.componentes || []).map((c) => (
                   <option key={String(c.id_componente_stl)} value={String(c.id_componente_stl)}>
                     {String(c.nome_componente ?? c.id_componente_stl)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-bold text-slate-300">
+                Pedido completo
+                <span className="ml-2 text-[10px] font-normal text-slate-500">— soma todos os STLs × qtd</span>
+              </label>
+              <select value={idPedido} onChange={(e) => handleSelectPedido(e.target.value)} className={FIELD}>
+                <option value="">Selecione (opcional)</option>
+                {(options?.pedidos || []).map((p) => (
+                  <option key={String(p.id_pedido)} value={String(p.id_pedido)}>
+                    {String(p.label_pedido ?? `Pedido ${p.id_pedido}`)}
                   </option>
                 ))}
               </select>
@@ -270,10 +341,12 @@ export default function Page() {
               </select>
             </div>
 
-            {/* Resumo do componente */}
-            {idComp && (
+            {/* Resumo do componente ou pedido */}
+            {(idComp || idPedido) && (
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-2 text-sm">
-                <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Dados do componente</p>
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                  {idPedido ? "Dados do pedido (todos os STLs)" : "Dados do componente"}
+                </p>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Peso total de filamento</span>
                   <span className="font-bold text-white">{pesoTotal != null ? `${pesoTotal.toLocaleString("pt-BR")} g` : "—"}</span>
@@ -346,8 +419,8 @@ export default function Page() {
 
             {faixas.length === 0 ? (
               <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-white/10 p-8 text-center text-sm text-slate-500">
-                {!idComp
-                  ? "Selecione um componente STL para calcular."
+                {!idComp && !idPedido
+                  ? "Selecione um componente STL ou um pedido para calcular."
                   : custoMat == null
                   ? "Cadastre os filamentos e custos do componente."
                   : "Informe o tempo de impressão (horas) para calcular."}
