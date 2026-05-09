@@ -243,12 +243,13 @@ export default function Page() {
   }
 
   async function salvarCotacao(faixa: Faixa) {
-    if (!idComp) { setErro("Selecione um componente STL."); return; }
+    if (!idComp && !idPedido) { setErro("Selecione um componente STL ou um pedido."); return; }
     try {
       setSalvando(true); setErro(""); setMensagem("");
       const now = new Date();
       const payload = {
-        id_componente_stl: Number(idComp),
+        id_componente_stl: idComp ? Number(idComp) : null,
+        id_pedido:         idPedido ? Number(idPedido) : null,
         id_impressora:     idImp ? Number(idImp) : null,
         custo_geral:       faixa.custo_unit,
         valor_venda:       faixa.preco_unit,
@@ -522,9 +523,11 @@ export default function Page() {
               </thead>
               <tbody>
                 {data.map((row, i) => (
-                  <tr key={String(row.id_componente_stl ?? i)} className="bg-white/[0.035] text-slate-200">
+                  <tr key={String(row.id_componente_stl ?? row.id_pedido ?? i)} className="bg-white/[0.035] text-slate-200">
                     <td className="rounded-l-2xl px-4 py-3 font-bold text-white">
-                      {nomeComp(row.id_componente_stl ?? "")}
+                      {row.id_pedido
+                        ? <span className="text-violet-300">📦 {(options?.pedidos||[]).find(p=>Number(p.id_pedido)===Number(row.id_pedido)) ? String((options?.pedidos||[]).find(p=>Number(p.id_pedido)===Number(row.id_pedido))?.label_pedido ?? `Pedido ${row.id_pedido}`) : `Pedido ${row.id_pedido}`}</span>
+                        : nomeComp(row.id_componente_stl ?? "")}
                     </td>
                     <td className="px-4 py-3 text-slate-400">
                       {row.id_impressora ? nomeImp(row.id_impressora) : "—"}
