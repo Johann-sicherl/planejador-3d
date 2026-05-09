@@ -1357,6 +1357,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
 
             {/* Barra de progresso baseada nos STLs concluidos */}
             {!isFalha&&(()=>{
+              const ids3mfDoPedido=nomes.pedido3mfs.get(Number(plano.id_pedido))||(plano.id_3mf?[Number(plano.id_3mf)]:[]);
               const linhas=options?(options.arquivos3mf||[]).filter((a)=>ids3mfDoPedido.includes(Number(a.id_3mf))):[];
               const total=linhas.length;
               const pct=total>0?Math.round((stlsConcluidos.length/total)*100):progresso;
