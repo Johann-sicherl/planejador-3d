@@ -1198,8 +1198,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
             <div className="space-y-1.5 rounded-xl bg-black/20 px-3 py-2 text-xs text-slate-300">
               {/* Lista todos os 3MFs do pedido */}
               {(()=>{
-                const ids3mfDoPedido=nomes.pedido3mfs.get(Number(plano.id_pedido))||
-                  (plano.id_3mf?[Number(plano.id_3mf)]:[]);
+                const ids3mfDoPedido=nomes.pedido3mfs.get(Number(plano.id_pedido))||[];
                 if(!ids3mfDoPedido.length) return (
                   <div className="flex items-center gap-2">
                     <Factory className="h-3.5 w-3.5 shrink-0 text-violet-300"/>
@@ -1223,8 +1222,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
               </div>
               {/* STLs com checkboxes de concluido e falha — todos os 3MFs do pedido */}
               {options&&(()=>{
-                const ids3mfDoPedido=nomes.pedido3mfs.get(Number(plano.id_pedido))||
-                  (plano.id_3mf?[Number(plano.id_3mf)]:[]);
+                const ids3mfDoPedido=nomes.pedido3mfs.get(Number(plano.id_pedido))||[];
                 const linhas=(options.arquivos3mf||[]).filter((a)=>ids3mfDoPedido.includes(Number(a.id_3mf)));
                 if(!linhas.length) return null;
                 return (
@@ -1357,7 +1355,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
 
             {/* Barra de progresso baseada nos STLs concluidos */}
             {!isFalha&&(()=>{
-              const ids3mfDoPedido=nomes.pedido3mfs.get(Number(plano.id_pedido))||(plano.id_3mf?[Number(plano.id_3mf)]:[]);
+              const ids3mfDoPedido=nomes.pedido3mfs.get(Number(plano.id_pedido))||[];
               const linhas=options?(options.arquivos3mf||[]).filter((a)=>ids3mfDoPedido.includes(Number(a.id_3mf))):[];
               const total=linhas.length;
               const pct=total>0?Math.round((stlsConcluidos.length/total)*100):progresso;
