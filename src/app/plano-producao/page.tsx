@@ -1318,9 +1318,9 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                                   <p className="mb-1 text-[10px] font-black text-red-300">🚫 Estoque insuficiente</p>
                                   <div className="space-y-0.5">
                                     {itensFilamento.filter(it=>!it.ok).map((it,j)=>(
-                                      <div key={j} className="flex items-center justify-between gap-2 rounded bg-red-500/15 px-1.5 py-1 text-[11px] text-red-300">
-                                        <span className="truncate font-bold">{it.label}</span>
-                                        <span className="shrink-0 font-mono whitespace-nowrap">✗ {it.necessario}g / {it.disponivel}g{it.localizacao?` (${it.localizacao})`:""}</span>
+                                      <div key={j} className="rounded bg-red-500/15 px-1.5 py-1 text-[11px] text-red-300">
+                                        <p className="font-bold break-all">{it.label}</p>
+                                        <p className="font-mono text-[10px] text-red-400/80">✗ {it.necessario}g / {it.disponivel}g{it.localizacao?` (${it.localizacao})`:""}</p>
                                       </div>
                                     ))}
                                   </div>
@@ -1331,9 +1331,9 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                                   <p className="mb-1 text-[10px] font-black text-emerald-300">✅ Estoque suficiente</p>
                                   <div className="space-y-0.5">
                                     {itensFilamento.filter(it=>it.ok).map((it,j)=>(
-                                      <div key={j} className="flex items-center justify-between gap-2 rounded bg-emerald-500/10 px-1.5 py-1 text-[11px] text-emerald-300">
-                                        <span className="truncate font-bold">{it.label}</span>
-                                        <span className="shrink-0 font-mono whitespace-nowrap">✓ {it.necessario}g / {it.disponivel}g{it.localizacao?` (${it.localizacao})`:""}</span>
+                                      <div key={j} className="rounded bg-emerald-500/10 px-1.5 py-1 text-[11px] text-emerald-300">
+                                        <p className="font-bold break-all">{it.label}</p>
+                                        <p className="font-mono text-[10px] text-emerald-400/80">✓ {it.necessario}g / {it.disponivel}g{it.localizacao?` (${it.localizacao})`:""}</p>
                                       </div>
                                     ))}
                                   </div>
