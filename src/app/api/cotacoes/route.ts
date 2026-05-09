@@ -3,17 +3,18 @@ import { supabaseAdmin as supabase } from "../../../lib/supabase";
 
 const TABLE = "cotacao_componente";
 const ID_COL = "id_componente_stl";
-const FIELDS = ["id_componente_stl", "id_impressora", "custo_geral", "valor_venda", "lucro_geral", "dia_cot", "mes_cot", "ano_cot"];
-const NUMERIC = ["id_componente_stl", "id_impressora", "custo_geral", "valor_venda", "lucro_geral", "dia_cot", "mes_cot", "ano_cot"];
+const FIELDS = ["id_componente_stl", "id_pedido", "id_impressora", "custo_geral", "valor_venda", "lucro_geral", "dia_cot", "mes_cot", "ano_cot"];
+const NUMERIC = ["id_componente_stl", "id_pedido", "id_impressora", "custo_geral", "valor_venda", "lucro_geral", "dia_cot", "mes_cot", "ano_cot"];
 
 function sanitize(body: Record<string, unknown>) {
   const payload: Record<string, unknown> = {};
   for (const field of FIELDS) {
     const value = body[field];
-    if (value === "" || value === undefined) {
+    if (value === "" || value === undefined || value === null) {
       payload[field] = null;
     } else if (NUMERIC.includes(field)) {
-      payload[field] = Number(value);
+      const n = Number(value);
+      payload[field] = isNaN(n) ? null : n;
     } else {
       payload[field] = value;
     }
