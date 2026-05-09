@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "../../../lib/supabase";
 
 const TABLE = "cotacao_componente";
-const ID_COL = "id_componente_stl";
+const ID_COL = "id_cotacao";
 const FIELDS = ["id_componente_stl", "id_pedido", "id_impressora", "custo_geral", "valor_venda", "lucro_geral", "dia_cot", "mes_cot", "ano_cot"];
 const NUMERIC = ["id_componente_stl", "id_pedido", "id_impressora", "custo_geral", "valor_venda", "lucro_geral", "dia_cot", "mes_cot", "ano_cot"];
 

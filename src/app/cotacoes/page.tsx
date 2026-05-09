@@ -523,7 +523,7 @@ export default function Page() {
               </thead>
               <tbody>
                 {data.map((row, i) => (
-                  <tr key={String(row.id_componente_stl ?? row.id_pedido ?? i)} className="bg-white/[0.035] text-slate-200">
+                  <tr key={String(row.id_cotacao ?? i)} className="bg-white/[0.035] text-slate-200">
                     <td className="rounded-l-2xl px-4 py-3 font-bold text-white">
                       {row.id_pedido
                         ? <span className="text-violet-300">📦 {(options?.pedidos||[]).find(p=>Number(p.id_pedido)===Number(row.id_pedido)) ? String((options?.pedidos||[]).find(p=>Number(p.id_pedido)===Number(row.id_pedido))?.label_pedido ?? `Pedido ${row.id_pedido}`) : `Pedido ${row.id_pedido}`}</span>
@@ -543,7 +543,7 @@ export default function Page() {
                     <td className="rounded-r-2xl px-4 py-3">
                       <ActionButtons
                         onEdit={() => {}}
-                        onDelete={() => handleDelete(String(row.id_componente_stl ?? ""))}
+                        onDelete={() => handleDelete(String(row.id_cotacao ?? ""))}
                       />
                     </td>
                   </tr>
