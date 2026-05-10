@@ -259,21 +259,19 @@ export default function PlanoProducaoPage() {
     const nec=[...necMap.entries()];
     if (!nec.length) { setAlertaEstoque({tipo:"aviso",texto:"Nenhum consumo cadastrado para o componente."}); return; }
 
-    // Para cada filamento escolhe o melhor carretel individual:
-    // menor qtd que atende (otimiza uso) ou maior disponível (se nenhum atende)
+    // Para cada filamento soma TODOS os carretéis disponíveis
     const itens=nec.map(([idF,{necessario,label}])=>{
-      const carreteis=(carreteisPorFil.get(idF)||[]).sort((a,b)=>a.qtd-b.qtd);
-      const suficientes=carreteis.filter(c=>c.qtd>=necessario);
-      const escolhido=suficientes.length>0
-        ? suficientes[0]
-        : carreteis.length>0 ? carreteis[carreteis.length-1]
-        : {qtd:0,localizacao:""};
+      const carreteis=(carreteisPorFil.get(idF)||[]);
+      const totalDisp=Number(carreteis.reduce((acc,c)=>acc+c.qtd,0).toFixed(3));
+      // Localização: mostra o maior carretel como referência principal
+      const maior=carreteis.sort((a,b)=>b.qtd-a.qtd)[0];
+      const localizacao=maior?.localizacao??""
       return {
         label,
         necessario,
-        disponivel:Number(escolhido.qtd.toFixed(3)),
-        localizacao:escolhido.localizacao,
-        ok:escolhido.qtd>=necessario,
+        disponivel:totalDisp,
+        localizacao,
+        ok:totalDisp>=necessario,
       };
     });
     const faltante=itens.some((i)=>!i.ok);
@@ -331,6 +329,67 @@ export default function PlanoProducaoPage() {
       const res=await fetch("/api/plano-producao",{method:editingId?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
       const result=await res.json();
       if (!res.ok||!result.ok) throw new Error(apiError(result));
+
+      // ── FFD: aloca carretéis e registra reservas ──────────────────────────
+      if (options && ids3mfSave.length > 0) {
+        const linhasFFD=(options.arquivos3mf||[]).filter((a)=>ids3mfSave.includes(Number(a.id_3mf)));
+
+        // 1. Monta necessidades por STL: [{id_linha, id_filamento, gramas}]
+        type NecItem={id_linha:number;id_filamento:number;gramas:number};
+        const necessidades:NecItem[]=[];
+        for (const l of linhasFFD) {
+          const c=(options.componentes||[]).find((x)=>Number(x.id_componente_stl)===Number(l.id_componente_stl));
+          if (!c) continue;
+          const qtd=Number(l.qtd_componente||1);
+          for (let n=1;n<=8;n++) {
+            const idF=Number((c as Record<string,unknown>)[`id_filamento${n}`]||0);
+            const g=Number((c as Record<string,unknown>)[`gramas_filamento_${n}`]||0);
+            if (!idF||g<=0) continue;
+            necessidades.push({id_linha:Number(l.id_linha||0),id_filamento:idF,gramas:Number((g*qtd).toFixed(3))});
+          }
+        }
+
+        // 2. Monta capacidade restante de cada carretel (saldo atual - já reservado)
+        type Carretel={id_linha_estoque:number;id_filamento:number;saldo:number;localizacao:string};
+        const carreteis:Carretel[]=(options.estoque||[]).map((e)=>({
+          id_linha_estoque:Number(e.id_estoque),
+          id_filamento:Number(e.id_filamento),
+          saldo:Number(e.qtd_estoque_gramas||0)-Number(e.qtd_reservada||0),
+          localizacao:String(e.localizacao??""),
+        })).filter(c=>c.saldo>0);
+
+        // 3. FFD: ordena STLs do maior para o menor consumo, aloca no primeiro carretel com saldo
+        const stlCarretelMap:Record<number,number>={};
+        const reservas:Record<number,number>={}; // id_linha_estoque → gramas reservadas nesta rodada
+        const necessidadesOrdenadas=[...necessidades].sort((a,b)=>b.gramas-a.gramas);
+
+        for (const nec of necessidadesOrdenadas) {
+          const candidatos=carreteis.filter(c=>c.id_filamento===nec.id_filamento&&c.saldo>=nec.gramas);
+          // Pega o menor suficiente (otimiza aproveitamento)
+          const escolhido=candidatos.sort((a,b)=>a.saldo-b.saldo)[0]
+            ?? carreteis.filter(c=>c.id_filamento===nec.id_filamento).sort((a,b)=>b.saldo-a.saldo)[0];
+          if (!escolhido) continue;
+          stlCarretelMap[nec.id_linha]=escolhido.id_linha_estoque;
+          escolhido.saldo=Number((escolhido.saldo-nec.gramas).toFixed(3));
+          reservas[escolhido.id_linha_estoque]=(reservas[escolhido.id_linha_estoque]||0)+nec.gramas;
+        }
+
+        // 4. Salva stl_carretel_map no plano
+        const idPedidoSalvo=toNum(form.id_pedido);
+        await fetch("/api/plano-producao",{method:"PUT",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({id_pedido:idPedidoSalvo,stl_carretel_map:stlCarretelMap})});
+
+        // 5. Grava reservas no estoque
+        if (Object.keys(reservas).length>0) {
+          await fetch("/api/reservas-estoque",{method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({id_pedido:idPedidoSalvo,reservas:Object.entries(reservas).map(([id_estoque,gramas])=>({
+              id_pedido:idPedidoSalvo,id_estoque_linha:Number(id_estoque),
+              id_filamento:carreteis.find(c=>c.id_linha_estoque===Number(id_estoque))?.id_filamento??0,
+              gramas_reservadas:gramas,
+            }))})});
+        }
+      }
+      // ── fim FFD ────────────────────────────────────────────────────────────
       setMensagem(editingId?"Plano atualizado.":"Pedido adicionado ao plano.");
       setFormOpen(false); setEditingId(null); setForm(EMPTY_FORM);
       await carregarDados();
@@ -374,6 +433,8 @@ export default function PlanoProducaoPage() {
     if (!window.confirm("Excluir este pedido do plano de producao?")) return;
     try {
       setErro(""); setMensagem("");
+      // Libera reservas de estoque antes de excluir
+      await fetch(`/api/reservas-estoque?id_pedido=${idPedido}`,{method:"DELETE"});
       const res=await fetch(`/api/plano-producao?id=${idPedido}`,{method:"DELETE"});
       const result=await res.json();
       if (!res.ok||!result.ok) throw new Error(apiError(result));
@@ -488,6 +549,8 @@ export default function PlanoProducaoPage() {
         }
         setMensagem("Pedido finalizado e estoque debitado automaticamente.");
         setFinalizacaoEmAndamento(null);
+        // Libera reservas — o débito real já foi feito acima
+        await fetch(`/api/reservas-estoque?id_pedido=${idPedido}`,{method:"DELETE"});
         await carregarDados();
       } catch (err) {
         setPlanos((prev) => prev.map((p) => p.id_pedido === idPedido ? { ...p, status_producao: planoAtual.status_producao || "pedidos" } : p));
@@ -1278,7 +1341,19 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                               onChange={async ()=>{
                                 const novo=isConcluido?stlsConcluidos.filter(x=>x!==lineId):[...stlsConcluidos,lineId];
                                 setStlsConcluidos(novo);
-                                const pct=Math.round((novo.length/linhas.length)*100);
+                                // Progresso por tempo: soma tempo dos STLs concluídos / tempo total
+                                const tempoTotal=linhas.reduce((acc,l)=>{
+                                  const c=(options?.componentes||[]).find((x)=>Number(x.id_componente_stl)===Number(l.id_componente_stl));
+                                  return acc+Number((c as Record<string,unknown>|undefined)?.tempo_impressao_min||0)*Number(l.qtd_componente||1);
+                                },0);
+                                const tempoConcluido=linhas.filter((_,idx)=>{
+                                  const lid=Number(linhas[idx].id_linha??idx);
+                                  return novo.includes(lid);
+                                }).reduce((acc,l)=>{
+                                  const c=(options?.componentes||[]).find((x)=>Number(x.id_componente_stl)===Number(l.id_componente_stl));
+                                  return acc+Number((c as Record<string,unknown>|undefined)?.tempo_impressao_min||0)*Number(l.qtd_componente||1);
+                                },0);
+                                const pct=tempoTotal>0?Math.min(Math.round((tempoConcluido/tempoTotal)*100),100):Math.round((novo.length/linhas.length)*100);
                                 onAtualizarProgresso?.(plano.id_pedido,Math.min(pct,100));
                                 await fetch("/api/plano-producao",{
                                   method:"PUT",headers:{"Content-Type":"application/json"},
