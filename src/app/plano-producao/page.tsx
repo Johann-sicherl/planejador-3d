@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useEffect, useMemo, useState } from "react";
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
@@ -9,7 +10,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import {
   AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Edit3, Factory,
-  GripVertical, Package, Plus, Printer, Save, Sparkles, Trash2, X,
+  GripVertical, Maximize2, Package, Plus, Printer, Save, Sparkles, Trash2, X,
 } from "lucide-react";
 import { Feedback, PageShell , useAuthGuard } from "../_shared";
 
@@ -1217,8 +1218,38 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
 
   // Quando o modal de falha abre, força expansão para mostrar os campos
   const deveExpandir = expandido || aguardaForm || aguardaFin || aguardaFalhaCarretel || flutuando;
+  const [maximizado, setMaximizado] = useState(false);
 
   return (
+    <>
+    {/* ── Modal maximizado — mesmo card, sem DnD, largura confortável ── */}
+    {maximizado&&(
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+        onPointerDown={(e)=>{if(e.target===e.currentTarget)setMaximizado(false)}}
+      >
+        <div className="relative w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-3xl shadow-2xl shadow-black/60">
+          {/* Botão fechar */}
+          <button
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={()=>setMaximizado(false)}
+            className="absolute right-3 top-3 z-10 rounded-xl bg-white/10 p-1.5 text-slate-400 hover:bg-white/20 hover:text-white transition-colors"
+            title="Fechar"
+          ><X className="h-4 w-4"/></button>
+          {/* Reutiliza CardPlanoModal — versão sem DnD passando flutuando=false */}
+          <CardPlanoModal
+            plano={plano} nomes={nomes} options={options}
+            falhaEmAndamento={falhaEmAndamento} onFalhaChange={onFalhaChange} onFalhaConfirm={onFalhaConfirm} onFalhaCancel={onFalhaCancel}
+            onRegistrarFalhaStls={onRegistrarFalhaStls} onAtualizarProgresso={onAtualizarProgresso}
+            finalizacaoEmAndamento={finalizacaoEmAndamento} onFinSlotChange={onFinSlotChange} onFinConfirm={onFinConfirm} onFinCancel={onFinCancel}
+            falhaCarretelEmAndamento={falhaCarretelEmAndamento} onFalhaCarretelSlotChange={onFalhaCarretelSlotChange}
+            onFalhaCarretelSlotGramas={onFalhaCarretelSlotGramas} onFalhaCarretelTempo={onFalhaCarretelTempo}
+            onFalhaCarretelConfirm={onFalhaCarretelConfirm} onFalhaCarretelCancel={onFalhaCarretelCancel}
+            onMover={onMover} onEdit={onEdit} onDelete={onDelete}
+          />
+        </div>
+      </div>
+    )}
     <article ref={setNodeRef} style={style}
       className={`rounded-2xl border shadow-lg backdrop-blur transition-all ${isFalha?"border-red-500/30 bg-red-950/60":"border-white/10 bg-slate-900/90"} ${isDragging?"opacity-40":"opacity-100"} ${flutuando?"rotate-2 scale-105 shadow-2xl shadow-cyan-500/20":""}`}>
 
@@ -1257,6 +1288,16 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
             </div>
             <span className="text-[10px] text-slate-500">{progresso}%</span>
           </div>
+        )}
+
+        {/* Botão maximizar */}
+        {!aguardaForm&&!flutuando&&(
+          <button
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={(e)=>{e.stopPropagation();setMaximizado(true);}}
+            className="shrink-0 rounded-lg bg-white/5 p-1 text-slate-400 hover:bg-white/10 hover:text-cyan-300 transition-colors"
+            title="Maximizar card"
+          ><Maximize2 className="h-3.5 w-3.5"/></button>
         )}
 
         {/* Botão expandir/colapsar */}
@@ -1781,5 +1822,16 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
         </>
       )}
     </article>
+    </>
+  );
+}
+
+// CardPlanoModal — versão sem DnD usada dentro do modal maximizado
+// Reutiliza toda a lógica de CardPlano mas sem useSortable e sem DragHandle
+function CardPlanoModal(props: Parameters<typeof CardPlano>[0]) {
+  return (
+    <div className={`rounded-3xl border shadow-2xl ${props.plano.status_producao==="falha"?"border-red-500/30 bg-red-950/80":"border-white/10 bg-slate-900"}`}>
+      <CardPlano {...props} flutuando={false} />
+    </div>
   );
 }
