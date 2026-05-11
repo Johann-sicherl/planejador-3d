@@ -752,32 +752,63 @@ export default function PlanoProducaoPage() {
     });
   }
 
-  // Clona o card para a coluna Falha com apenas os STLs marcados
-  async function registrarFalhaStls(idPedido: number, stlsComFalha: number[], gramasPerdido: string, tempoPerdido: string) {
+  // Registra falha: mantém STL no card original, cria cópia na coluna Falha
+  async function registrarFalhaStls(idPedido: number, stlsComFalha: number[], gramasPerdidoStr: string, tempoPerdido: string) {
     const planoAtual = planos.find((p) => p.id_pedido === idPedido);
     if (!planoAtual) return;
     try {
       setErro(""); setMensagem("");
-      // 1. Atualiza status do plano original para 'falha'
-      const r1 = await fetch("/api/plano-producao", {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...planoAtual, status_producao: "falha" }),
-      });
-      const d1 = await r1.json();
-      if (!r1.ok || !d1.ok) throw new Error(d1.error || "Erro ao atualizar plano.");
+
+      // Parse gramas por filamento (JSON de {idFil: gramas})
+      let gramasPorFil: Record<number,string> = {};
+      try { gramasPorFil = JSON.parse(gramasPerdidoStr); } catch { gramasPorFil = {}; }
+
+      // 1. NÃO altera status do card original — mantém onde está
       // 2. Grava em falhas_producao para cada STL com falha
+      const totalGramas = Object.values(gramasPorFil).reduce((acc, v) => acc + (Number(v) || 0), 0);
       for (const id3mfLinha of stlsComFalha) {
         await fetch("/api/falhas", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             id_3mf: id3mfLinha,
             tempo_impressao_min_perdido: tempoPerdido ? Number(tempoPerdido) : null,
-            quant_mat_perdido: gramasPerdido ? Number(gramasPerdido) : null,
+            quant_mat_perdido: totalGramas || null,
           }),
         });
       }
-      setPlanos((prev) => prev.map((p) => p.id_pedido === idPedido ? { ...p, status_producao: "falha" } : p));
-      setMensagem("Falha registrada com sucesso.");
+
+      // 3. Debita por filamento no estoque (usa carretel do stl_carretel_map se disponível)
+      const carretelMap = planoAtual.stl_carretel_map as Record<string,number> | null ?? {};
+      for (const [idFilStr, gramasStr] of Object.entries(gramasPorFil)) {
+        const gramas = Number(gramasStr);
+        if (!gramas) continue;
+        const idFil = Number(idFilStr);
+        // Tenta usar o carretel alocado pelo FFD
+        const idEstoque = Object.entries(carretelMap).map(([,v])=>v).find(v => {
+          const est = (options?.estoque||[]).find(e=>Number(e.id_estoque)===v&&Number(e.id_filamento)===idFil);
+          return !!est;
+        });
+        await fetch("/api/estoque-debito", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id_filamento: idFil, id_estoque: idEstoque ?? null, gramas }),
+        });
+      }
+
+      // 4. Cria um registro de falha na coluna "falha" como cópia
+      await fetch("/api/plano-producao", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...planoAtual,
+          id_pedido: undefined, // novo registro
+          status_producao: "falha",
+          progresso: 0,
+          stls_concluidos: stlsComFalha,
+          stl_carretel_map: null,
+        }),
+      });
+
+      setMensagem("Falha registrada. Card original mantido para nova tentativa.");
+      await carregarDados();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Erro ao registrar falha.");
     }
@@ -1169,7 +1200,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
   const [stlsComFalha,     setStlsComFalha]     = useState<number[]>([]);
   const [stlsExpandidos,   setStlsExpandidos]   = useState<Set<number>>(new Set());
   const [mostrarFormFalhaStl, setMostrarFormFalhaStl] = useState(false);
-  const [gramasFalhaStl,   setGramasFalhaStl]   = useState("");
+  const [gramasFalhaStl,   setGramasFalhaStl]   = useState<Record<number,string>>({});
   const [tempoFalhaStl,    setTempoFalhaStl]    = useState("");
 
   const corPrioridade:Record<string,string>={
@@ -1464,62 +1495,79 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
             )}
 
             {/* Form de falha por STL */}
-            {mostrarFormFalhaStl&&(
-              <div className="rounded-xl border border-red-500/40 bg-black/40 p-3 space-y-2">
-                <p className="text-xs font-black text-red-300 flex items-center gap-1.5">
-                  <AlertTriangle className="h-3.5 w-3.5"/> Registrar falha nos STLs marcados
-                </p>
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-red-300/80">Material perdido (g) *</label>
-                  <input type="number" min="0" step="0.1" value={gramasFalhaStl}
-                    onChange={(e)=>setGramasFalhaStl(e.target.value)} placeholder="Ex.: 45.5"
-                    className="w-full rounded-lg border border-red-500/30 bg-slate-950/80 px-3 py-1.5 text-xs text-white outline-none focus:border-red-400 placeholder:text-slate-600"/>
+            {mostrarFormFalhaStl&&(()=>{
+              // Monta lista de filamentos dos STLs marcados com falha
+              type FilFalha={idFil:number;nomeFil:string;gramasRef:number};
+              const filMap=new Map<number,FilFalha>();
+              const ids3mfFalha=nomes.pedido3mfs.get(Number(plano.id_pedido))||[];
+              const linhasFalha=(options?.arquivos3mf||[]).filter((a)=>ids3mfFalha.includes(Number(a.id_3mf)));
+              for (const id_linha of stlsComFalha) {
+                const linha=linhasFalha.find((_,i)=>i===id_linha)||linhasFalha[id_linha];
+                const linhaReal=linhasFalha.find((l)=>Number(l.id_linha)===id_linha);
+                const l=linhaReal||linha;
+                if (!l) continue;
+                const comp=(options?.componentes||[]).find((c)=>Number(c.id_componente_stl)===Number(l.id_componente_stl));
+                if (!comp) continue;
+                const qtd=Number(l.qtd_componente||1);
+                for (let n=1;n<=8;n++) {
+                  const idFil=Number((comp as Record<string,unknown>)[`id_filamento${n}`]||0);
+                  const gramas=Number((comp as Record<string,unknown>)[`gramas_filamento_${n}`]||0);
+                  if (!idFil||gramas<=0) continue;
+                  const fil=(options?.filamentos||[]).find((f)=>Number(f.id_filamento)===idFil);
+                  const nomeFil=fil?`${String(fil.nome_filamento??"")}${fil.cor_filamento?` · ${fil.cor_filamento}`:""}`:String(idFil);
+                  const prev=filMap.get(idFil);
+                  filMap.set(idFil,{idFil,nomeFil,gramasRef:(prev?.gramasRef||0)+gramas*qtd});
+                }
+              }
+              const filLista=Array.from(filMap.values());
+              const todosPreenchidos=filLista.every(f=>(gramasFalhaStl[f.idFil]??""!==""));
+              return (
+                <div className="rounded-xl border border-red-500/40 bg-black/40 p-3 space-y-2">
+                  <p className="text-xs font-black text-red-300 flex items-center gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5"/> Registrar falha nos STLs marcados
+                  </p>
+                  {filLista.length===0&&(
+                    <p className="text-[10px] text-slate-500">Nenhum filamento cadastrado nos componentes selecionados.</p>
+                  )}
+                  {filLista.map((f)=>(
+                    <div key={f.idFil}>
+                      <label className="mb-0.5 block text-xs font-bold text-red-300/80">{f.nomeFil} — perdido (g)</label>
+                      <input type="number" min="0" step="0.1"
+                        value={gramasFalhaStl[f.idFil]??""}
+                        onChange={(e)=>setGramasFalhaStl((prev)=>({...prev,[f.idFil]:e.target.value}))}
+                        placeholder={`Ex.: ${f.gramasRef}g`}
+                        className="w-full rounded-lg border border-red-500/30 bg-slate-950/80 px-3 py-1.5 text-xs text-white outline-none focus:border-red-400 placeholder:text-slate-600"/>
+                      <p className="mt-0.5 text-[10px] text-slate-500">Referência total do pedido: {f.gramasRef}g</p>
+                    </div>
+                  ))}
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-red-300/80">Tempo perdido (min) *</label>
+                    <input type="number" min="0" value={tempoFalhaStl}
+                      onChange={(e)=>setTempoFalhaStl(e.target.value)} placeholder="Ex.: 120"
+                      className="w-full rounded-lg border border-red-500/30 bg-slate-950/80 px-3 py-1.5 text-xs text-white outline-none focus:border-red-400 placeholder:text-slate-600"/>
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <button type="button"
+                      disabled={!tempoFalhaStl}
+                      onClick={()=>{
+                        // Monta string de gramas por filamento para passar ao handler
+                        const gramasStr=JSON.stringify(gramasFalhaStl);
+                        onRegistrarFalhaStls?.(plano.id_pedido,stlsComFalha,gramasStr,tempoFalhaStl);
+                        setMostrarFormFalhaStl(false);
+                        setGramasFalhaStl({}); setTempoFalhaStl("");
+                        // NÃO limpa stlsComFalha — STL permanece no card original
+                      }}
+                      className="flex-1 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-black text-white hover:bg-red-400 disabled:opacity-50">
+                      Confirmar falha
+                    </button>
+                    <button type="button" onClick={()=>setMostrarFormFalhaStl(false)}
+                      className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/10">
+                      Cancelar
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-red-300/80">Tempo perdido (min) *</label>
-                  <input type="number" min="0" value={tempoFalhaStl}
-                    onChange={(e)=>setTempoFalhaStl(e.target.value)} placeholder="Ex.: 120"
-                    className="w-full rounded-lg border border-red-500/30 bg-slate-950/80 px-3 py-1.5 text-xs text-white outline-none focus:border-red-400 placeholder:text-slate-600"/>
-                </div>
-                <div className="flex gap-2 pt-1">
-                  <button type="button"
-                    disabled={!gramasFalhaStl||!tempoFalhaStl}
-                    onClick={()=>{
-                      // Abre modal de seleção de carretel para debitar material perdido
-      if (options && plano.id_3mf) {
-        const linhas3mf=(options.arquivos3mf||[]).filter((a)=>Number(a.id_3mf)===Number(plano.id_3mf));
-        const slots:SlotFilamento[]=[];
-        for (const linha of linhas3mf) {
-          const comp=(options.componentes||[]).find((c)=>Number(c.id_componente_stl)===Number(linha.id_componente_stl));
-          if (!comp) continue;
-          const nomeStl=String(comp.nome_componente??`STL ${linha.id_componente_stl}`);
-          for (let i=1;i<=8;i++) {
-            const idFil=Number((comp as Record<string,unknown>)[`id_filamento${i}`]||0);
-            const gramas=Number((comp as Record<string,unknown>)[`gramas_filamento_${i}`]||0);
-            if (!idFil||gramas<=0) continue;
-            const fil=(options.filamentos||[]).find((f)=>Number(f.id_filamento)===idFil);
-            const nomeFil=String(fil?.nome_filamento??`Filamento ${idFil}`);
-            const cor=fil?.cor_filamento?` ${fil.cor_filamento}`:"";
-            slots.push({idFilamento:idFil,nomeFilamento:`${nomeFil}${cor}`,nomeStl,gramas:gramas*Number(linha.qtd_componente||1),gramasPerdido:"",idEstoqueEscolhido:""});
-          }
-        }
-        onRegistrarFalhaStls?.(plano.id_pedido,stlsComFalha,gramasFalhaStl,tempoFalhaStl);
-      } else {
-        onRegistrarFalhaStls?.(plano.id_pedido,stlsComFalha,gramasFalhaStl,tempoFalhaStl);
-      }
-      setMostrarFormFalhaStl(false);
-      setGramasFalhaStl(""); setTempoFalhaStl(""); setStlsComFalha([]);
-                    }}
-                    className="flex-1 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-black text-white hover:bg-red-400 disabled:opacity-50">
-                    Confirmar falha
-                  </button>
-                  <button type="button" onClick={()=>setMostrarFormFalhaStl(false)}
-                    className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/10">
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
 
           {/* ── Modal inline de finalização — seleção de carreteis ── */}
