@@ -1217,7 +1217,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
   };
 
   // Quando o modal de falha abre, força expansão para mostrar os campos
-  const deveExpandir = expandido || aguardaForm || aguardaFin || aguardaFalhaCarretel || flutuando;
+  const deveExpandir = maximizado || expandido || aguardaForm || aguardaFin || aguardaFalhaCarretel || flutuando;
   const [maximizado, setMaximizado] = useState(false);
 
   return (
