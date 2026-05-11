@@ -831,20 +831,26 @@ export default function PlanoProducaoPage() {
                   const ids3mfSug=nomes.pedido3mfs.get(Number(idPed))||[];
                   const linhasSug=(options?.arquivos3mf||[]).filter((a)=>ids3mfSug.includes(Number(a.id_3mf)));
                   const ciData=options?.compImpressoras||[];
-                  // Pega a primeira impressora encontrada nos componentes
+                  // Pega a primeira impressora encontrada nos componentes e soma o tempo de todos os STLs
+                  let impSugerida:{idImpressora:number;nomeImpressora:string}|null=null;
                   for (const linha of linhasSug) {
                     const ci=ciData.find((c)=>Number(c.id_componente_stl)===Number(linha.id_componente_stl));
-                    if (ci) {
+                    if (ci&&!impSugerida) {
                       const imp=(options?.impressoras||[]).find((i)=>Number(i.id_impressora)===Number(ci.id_impressora));
-                      if (imp) {
-                        setSugestaoImp({
-                          idImpressora:Number(ci.id_impressora),
-                          nomeImpressora:String(imp.nome_impressora??imp.nome??ci.id_impressora),
-                          tempoMin:Number(ci.tempo_impressao_min)||0,
-                        });
-                        return;
-                      }
+                      if (imp) impSugerida={idImpressora:Number(ci.id_impressora),nomeImpressora:String(imp.nome_impressora??imp.nome??ci.id_impressora)};
                     }
+                  }
+                  if (impSugerida) {
+                    // Soma tempo de todos os STLs para esta impressora (ou tempo padrão do componente)
+                    let tempoTotal=0;
+                    for (const linha of linhasSug) {
+                      const ci=ciData.find((c)=>Number(c.id_componente_stl)===Number(linha.id_componente_stl)&&Number(c.id_impressora)===impSugerida!.idImpressora);
+                      const comp=(options?.componentes||[]).find((c)=>Number(c.id_componente_stl)===Number(linha.id_componente_stl));
+                      const t=ci?Number(ci.tempo_impressao_min):Number((comp as Record<string,unknown>|undefined)?.tempo_impressao_min||0);
+                      tempoTotal+=t*Number(linha.qtd_componente||1);
+                    }
+                    setSugestaoImp({...impSugerida,tempoMin:tempoTotal});
+                    return;
                   }
                   setSugestaoImp(null);
                 }}>
