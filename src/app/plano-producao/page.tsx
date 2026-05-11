@@ -799,12 +799,15 @@ export default function PlanoProducaoPage() {
       await fetch("/api/plano-producao", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...planoAtual,
-          id_pedido: undefined, // novo registro
-          status_producao: "falha",
-          progresso: 0,
-          stls_concluidos: stlsComFalha,
-          stl_carretel_map: null,
+          id_pedido:          planoAtual.id_pedido,
+          id_impressora:      planoAtual.id_impressora,
+          id_3mf:             planoAtual.id_3mf,
+          tempo_impressao_min:planoAtual.tempo_impressao_min,
+          status_producao:    "falha",
+          prioridade:         planoAtual.prioridade,
+          progresso:          0,
+          stls_concluidos:    stlsComFalha,
+          stl_carretel_map:   null,
         }),
       });
 
