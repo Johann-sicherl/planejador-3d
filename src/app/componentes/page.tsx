@@ -157,6 +157,7 @@ export default function Page() {
     setGramas7("");
     setGramas8("");
     setTempoImpressaoMin("");
+    setCompImps([]);
   }
 
   function fillForEdit(row: Registro) {
@@ -182,6 +183,14 @@ export default function Page() {
     setGramas8(String(row.gramas_filamento_8 ?? ""));
 
     setTempoImpressaoMin(String(row.tempo_impressao_min ?? ""));
+
+    // Carrega tempos por impressora deste componente
+    const idComp = Number(row.id_componente_stl);
+    const cis = (options?.compImpressoras || [])
+      .filter((ci) => Number(ci.id_componente_stl) === idComp)
+      .map((ci) => ({ id_impressora: Number(ci.id_impressora), tempo_impressao_min: Number(ci.tempo_impressao_min) }));
+    setCompImps(cis);
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
