@@ -28,6 +28,7 @@ type PlanoProducao = {
   progresso?: number | null;
   peso_estimado_g?: number | null;
   stls_concluidos?: number[] | null;
+  stl_carretel_map?: Record<string,number> | null;
 };
 
 type OptionsPayload = {
