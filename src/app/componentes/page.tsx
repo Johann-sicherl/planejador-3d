@@ -178,15 +178,23 @@ export default function Page() {
 
   const [nomes_sel, setNomesSel] = useState<string[]>(Array(8).fill(""));
   const [mats_sel,  setMatsSel]  = useState<string[]>(Array(8).fill(""));
+  const [fabs_sel,  setFabsSel]  = useState<string[]>(Array(8).fill(""));
 
   function setNomeSel(idx: number, val: string) {
     setNomesSel((p) => p.map((v, i) => i === idx ? val : v));
     setMatsSel((p)  => p.map((v, i) => i === idx ? ""  : v));
+    setFabsSel((p)  => p.map((v, i) => i === idx ? ""  : v));
     [setIdFilamento1,setIdFilamento2,setIdFilamento3,setIdFilamento4,
      setIdFilamento5,setIdFilamento6,setIdFilamento7,setIdFilamento8][idx]?.("");
   }
   function setMatSel(idx: number, val: string) {
     setMatsSel((p) => p.map((v, i) => i === idx ? val : v));
+    setFabsSel((p)  => p.map((v, i) => i === idx ? ""  : v));
+    [setIdFilamento1,setIdFilamento2,setIdFilamento3,setIdFilamento4,
+     setIdFilamento5,setIdFilamento6,setIdFilamento7,setIdFilamento8][idx]?.("");
+  }
+  function setFabSel(idx: number, val: string) {
+    setFabsSel((p) => p.map((v, i) => i === idx ? val : v));
     [setIdFilamento1,setIdFilamento2,setIdFilamento3,setIdFilamento4,
      setIdFilamento5,setIdFilamento6,setIdFilamento7,setIdFilamento8][idx]?.("");
   }
@@ -212,10 +220,11 @@ export default function Page() {
   const [compImps, setCompImps] = useState<CompImpressora[]>([]);
 
   // ── Filtros ────────────────────────────────────────────────────────────────
-  const [filtroNome,      setFiltroNome]      = useState<string[]>([]);
-  const [filtroFilamento, setFiltroFilamento] = useState<string[]>([]);
-  const [filtroMaterial,  setFiltroMaterial]  = useState<string[]>([]);
-  const [filtroCor,       setFiltroCor]       = useState<string[]>([]);
+  const [filtroNome,        setFiltroNome]        = useState<string[]>([]);
+  const [filtroFilamento,   setFiltroFilamento]   = useState<string[]>([]);
+  const [filtroMaterial,    setFiltroMaterial]    = useState<string[]>([]);
+  const [filtroFabricante,  setFiltroFabricante]  = useState<string[]>([]);
+  const [filtroCor,         setFiltroCor]         = useState<string[]>([]);
 
   useEffect(() => {
     getJson<OptionsData>("/api/options")
@@ -266,6 +275,22 @@ export default function Page() {
     return texto(item.cor_filamento) || texto(item.cor) || "";
   }
 
+  // Retorna só o fabricante para filtro de fabricante
+  function fabricanteFilamentoPorId(id: unknown) {
+    const chave = texto(id);
+    if (!chave) return "";
+    const item = filamentoPorId.get(chave);
+    if (!item) return "";
+    return (
+      texto(item.nome_fabricante) ||
+      texto(item.fabricante_filamento) ||
+      texto(item.fabricante) ||
+      texto(item.cadastro_fabricantes_filamentos?.nome_fabricante) ||
+      texto(item.cadastro_fabricantes_filamentos?.fabricante) ||
+      ""
+    );
+  }
+
   function resetForm() {
     setEditingId(null);
     setNomeComponente("");
@@ -277,6 +302,7 @@ export default function Page() {
     setCompImps([]);
     setNomesSel(Array(8).fill(""));
     setMatsSel(Array(8).fill(""));
+    setFabsSel(Array(8).fill(""));
   }
 
   function fillForEdit(row: Registro) {
@@ -293,6 +319,7 @@ export default function Page() {
     ];
     const novosNomes: string[] = Array(8).fill("");
     const novosMats: string[] = Array(8).fill("");
+    const novosFabs: string[] = Array(8).fill("");
 
     ids.forEach((id, i) => {
       const val = String(id ?? "");
@@ -302,11 +329,18 @@ export default function Page() {
         if (item) {
           novosNomes[i] = texto(item.nome_filamento) || texto(item.nome) || "";
           novosMats[i]  = texto(item.material_filamento) || texto(item.material) || "";
+          novosFabs[i]  =
+            texto(item.nome_fabricante) ||
+            texto(item.fabricante_filamento) ||
+            texto(item.fabricante) ||
+            texto(item.cadastro_fabricantes_filamentos?.nome_fabricante) ||
+            texto(item.cadastro_fabricantes_filamentos?.fabricante) || "";
         }
       }
     });
     setNomesSel(novosNomes);
     setMatsSel(novosMats);
+    setFabsSel(novosFabs);
 
     setGramas1(String(row.gramas_filamento_1 ?? ""));
     setGramas2(String(row.gramas_filamento_2 ?? ""));
@@ -390,50 +424,60 @@ export default function Page() {
         .map((n) => row[`id_filamento${n}`])
         .filter((id) => id != null && String(id) !== "" && String(id) !== "0")
         .map((id) => ({
-          label:    labelFilamentoPorId(id),
-          nome:     nomeFilamentoPorId(id),
-          material: materialFilamentoPorId(id),
-          cor:      corFilamentoPorId(id),
+          label:      labelFilamentoPorId(id),
+          nome:       nomeFilamentoPorId(id),
+          material:   materialFilamentoPorId(id),
+          fabricante: fabricanteFilamentoPorId(id),
+          cor:        corFilamentoPorId(id),
         }));
 
       return {
         row,
         nomeComp:   String(row.nome_componente ?? ""),
         filamentos: filamentosUsados,
-        // Para filtros: sets únicos de nome, material e cor
-        nomesFilamento:    [...new Set(filamentosUsados.map((f) => f.nome).filter(Boolean))],
-        materiaisFilamento:[...new Set(filamentosUsados.map((f) => f.material).filter(Boolean))],
-        coresFilamento:    [...new Set(filamentosUsados.map((f) => f.cor).filter(Boolean))],
+        nomesFilamento:       [...new Set(filamentosUsados.map((f) => f.nome).filter(Boolean))],
+        materiaisFilamento:   [...new Set(filamentosUsados.map((f) => f.material).filter(Boolean))],
+        fabricantesFilamento: [...new Set(filamentosUsados.map((f) => f.fabricante).filter(Boolean))],
+        coresFilamento:       [...new Set(filamentosUsados.map((f) => f.cor).filter(Boolean))],
       };
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, filamentoPorId]);
 
   // Opções únicas para os dropdowns de filtro
-  const opcoesNome      = [...new Set(todasAsLinhas.map((r) => r.nomeComp))].sort();
-  const opcoesFilamento = [...new Set(todasAsLinhas.flatMap((r) => r.nomesFilamento))].sort();
-  const opcoesMaterial  = [...new Set(todasAsLinhas.flatMap((r) => r.materiaisFilamento))].sort();
-  const opcoesCor       = [...new Set(todasAsLinhas.flatMap((r) => r.coresFilamento))].sort();
+  const opcoesNome        = [...new Set(todasAsLinhas.map((r) => r.nomeComp))].sort();
+  const opcoesFilamento   = [...new Set(todasAsLinhas.flatMap((r) => r.nomesFilamento))].sort();
+  const opcoesMaterial    = [...new Set(todasAsLinhas.flatMap((r) => r.materiaisFilamento))].sort();
+  const opcoesFabricante  = [...new Set(todasAsLinhas.flatMap((r) => r.fabricantesFilamento))].sort();
+  const opcoesCor         = [...new Set(todasAsLinhas.flatMap((r) => r.coresFilamento))].sort();
 
-  const nomeSet      = new Set(filtroNome);
-  const filamentoSet = new Set(filtroFilamento);
-  const materialSet  = new Set(filtroMaterial);
-  const corSet       = new Set(filtroCor);
+  const nomeSet       = new Set(filtroNome);
+  const filamentoSet  = new Set(filtroFilamento);
+  const materialSet   = new Set(filtroMaterial);
+  const fabricanteSet = new Set(filtroFabricante);
+  const corSet        = new Set(filtroCor);
 
   const dadosFiltrados = todasAsLinhas.filter((r) => {
-    if (nomeSet.size      > 0 && !nomeSet.has(r.nomeComp)) return false;
-    if (filamentoSet.size > 0 && !r.nomesFilamento.some((n) => filamentoSet.has(n))) return false;
-    if (materialSet.size  > 0 && !r.materiaisFilamento.some((m) => materialSet.has(m))) return false;
-    if (corSet.size       > 0 && !r.coresFilamento.some((c) => corSet.has(c))) return false;
+    if (nomeSet.size       > 0 && !nomeSet.has(r.nomeComp)) return false;
+    if (filamentoSet.size  > 0 && !r.nomesFilamento.some((n) => filamentoSet.has(n))) return false;
+    if (materialSet.size   > 0 && !r.materiaisFilamento.some((m) => materialSet.has(m))) return false;
+    if (fabricanteSet.size > 0 && !r.fabricantesFilamento.some((f) => fabricanteSet.has(f))) return false;
+    if (corSet.size        > 0 && !r.coresFilamento.some((c) => corSet.has(c))) return false;
     return true;
   });
 
-  const filtroKey = [filtroNome.join("|"), filtroFilamento.join("|"), filtroMaterial.join("|"), filtroCor.join("|")].join("__");
+  const filtroKey = [
+    filtroNome.join("|"), filtroFilamento.join("|"), filtroMaterial.join("|"),
+    filtroFabricante.join("|"), filtroCor.join("|"),
+  ].join("__");
 
-  const algumFiltroAtivo = filtroNome.length > 0 || filtroFilamento.length > 0 || filtroMaterial.length > 0 || filtroCor.length > 0;
+  const algumFiltroAtivo =
+    filtroNome.length > 0 || filtroFilamento.length > 0 || filtroMaterial.length > 0 ||
+    filtroFabricante.length > 0 || filtroCor.length > 0;
 
   function limparTodosFiltros() {
-    setFiltroNome([]); setFiltroFilamento([]); setFiltroMaterial([]); setFiltroCor([]);
+    setFiltroNome([]); setFiltroFilamento([]); setFiltroMaterial([]);
+    setFiltroFabricante([]); setFiltroCor([]);
   }
 
   if (!ready) return <main className="min-h-screen p-8 text-slate-100">Carregando...</main>;
@@ -488,6 +532,7 @@ export default function Page() {
           {camposFilamento.map((campo) => {
             const nomeSel = nomes_sel[campo.idx - 1];
             const matSel  = mats_sel[campo.idx - 1];
+            const fabSel  = fabs_sel[campo.idx - 1];
 
             const nomes = [...new Set(filamentosDisponiveis.map((f) =>
               texto(f.nome_filamento) || texto(f.nome)))].filter(Boolean).sort();
@@ -498,10 +543,34 @@ export default function Page() {
                 .map((f) => texto(f.material_filamento) || texto(f.material))
             )].filter(Boolean).sort();
 
-            const cores = filamentosDisponiveis.filter((f) =>
-              (texto(f.nome_filamento) || texto(f.nome)) === nomeSel &&
-              (texto(f.material_filamento) || texto(f.material)) === matSel
-            );
+            const fabricantes = [...new Set(
+              filamentosDisponiveis
+                .filter((f) =>
+                  (texto(f.nome_filamento) || texto(f.nome)) === nomeSel &&
+                  (texto(f.material_filamento) || texto(f.material)) === matSel
+                )
+                .map((f) =>
+                  texto(f.nome_fabricante) ||
+                  texto(f.fabricante_filamento) ||
+                  texto(f.fabricante) ||
+                  texto(f.cadastro_fabricantes_filamentos?.nome_fabricante) ||
+                  texto(f.cadastro_fabricantes_filamentos?.fabricante)
+                )
+            )].filter(Boolean).sort();
+
+            const cores = filamentosDisponiveis.filter((f) => {
+              const fab =
+                texto(f.nome_fabricante) ||
+                texto(f.fabricante_filamento) ||
+                texto(f.fabricante) ||
+                texto(f.cadastro_fabricantes_filamentos?.nome_fabricante) ||
+                texto(f.cadastro_fabricantes_filamentos?.fabricante);
+              return (
+                (texto(f.nome_filamento) || texto(f.nome)) === nomeSel &&
+                (texto(f.material_filamento) || texto(f.material)) === matSel &&
+                fab === fabSel
+              );
+            });
 
             return (
               <div key={campo.idx} className="rounded-2xl border border-white/10 bg-slate-950/40 p-3">
@@ -541,8 +610,25 @@ export default function Page() {
                   </label>
                 )}
 
-                {/* Seleção 3: Cor */}
+                {/* Seleção 3: Fabricante */}
                 {nomeSel && matSel && (
+                  <label className="mt-2 block">
+                    <span className="mb-1 block text-xs font-semibold text-slate-400">Fabricante</span>
+                    <select
+                      value={fabSel}
+                      onChange={(e) => setFabSel(campo.idx - 1, e.target.value)}
+                      className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-white outline-none focus:border-cyan-400"
+                    >
+                      <option value="">Selecione o fabricante</option>
+                      {fabricantes.map((fb) => (
+                        <option key={fb} value={fb}>{fb}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {/* Seleção 4: Cor */}
+                {nomeSel && matSel && fabSel && (
                   <label className="mt-2 block">
                     <span className="mb-1 block text-xs font-semibold text-slate-400">Cor</span>
                     <select
@@ -677,7 +763,7 @@ export default function Page() {
           emptyText="Nenhum componente cadastrado."
         >
           {/* Filtros */}
-          <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+          <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
             <FiltroColuna
               label="Componente"
               opcoes={opcoesNome}
@@ -695,6 +781,12 @@ export default function Page() {
               opcoes={opcoesMaterial}
               selecionados={filtroMaterial}
               onChange={setFiltroMaterial}
+            />
+            <FiltroColuna
+              label="Fabricante"
+              opcoes={opcoesFabricante}
+              selecionados={filtroFabricante}
+              onChange={setFiltroFabricante}
             />
             <FiltroColuna
               label="Cor"
