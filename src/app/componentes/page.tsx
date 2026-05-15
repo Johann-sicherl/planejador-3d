@@ -215,6 +215,7 @@ export default function Page() {
   const [filtroNome,      setFiltroNome]      = useState<string[]>([]);
   const [filtroFilamento, setFiltroFilamento] = useState<string[]>([]);
   const [filtroMaterial,  setFiltroMaterial]  = useState<string[]>([]);
+  const [filtroCor,       setFiltroCor]       = useState<string[]>([]);
 
   useEffect(() => {
     getJson<OptionsData>("/api/options")
@@ -254,6 +255,15 @@ export default function Page() {
     const item = filamentoPorId.get(chave);
     if (!item) return "";
     return texto(item.material_filamento) || texto(item.material) || "";
+  }
+
+  // Retorna só a cor para filtro de cor
+  function corFilamentoPorId(id: unknown) {
+    const chave = texto(id);
+    if (!chave) return "";
+    const item = filamentoPorId.get(chave);
+    if (!item) return "";
+    return texto(item.cor_filamento) || texto(item.cor) || "";
   }
 
   function resetForm() {
@@ -383,15 +393,17 @@ export default function Page() {
           label:    labelFilamentoPorId(id),
           nome:     nomeFilamentoPorId(id),
           material: materialFilamentoPorId(id),
+          cor:      corFilamentoPorId(id),
         }));
 
       return {
         row,
         nomeComp:   String(row.nome_componente ?? ""),
         filamentos: filamentosUsados,
-        // Para filtros: sets únicos de nome e material
+        // Para filtros: sets únicos de nome, material e cor
         nomesFilamento:    [...new Set(filamentosUsados.map((f) => f.nome).filter(Boolean))],
         materiaisFilamento:[...new Set(filamentosUsados.map((f) => f.material).filter(Boolean))],
+        coresFilamento:    [...new Set(filamentosUsados.map((f) => f.cor).filter(Boolean))],
       };
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -401,24 +413,27 @@ export default function Page() {
   const opcoesNome      = [...new Set(todasAsLinhas.map((r) => r.nomeComp))].sort();
   const opcoesFilamento = [...new Set(todasAsLinhas.flatMap((r) => r.nomesFilamento))].sort();
   const opcoesMaterial  = [...new Set(todasAsLinhas.flatMap((r) => r.materiaisFilamento))].sort();
+  const opcoesCor       = [...new Set(todasAsLinhas.flatMap((r) => r.coresFilamento))].sort();
 
   const nomeSet      = new Set(filtroNome);
   const filamentoSet = new Set(filtroFilamento);
   const materialSet  = new Set(filtroMaterial);
+  const corSet       = new Set(filtroCor);
 
   const dadosFiltrados = todasAsLinhas.filter((r) => {
     if (nomeSet.size      > 0 && !nomeSet.has(r.nomeComp)) return false;
     if (filamentoSet.size > 0 && !r.nomesFilamento.some((n) => filamentoSet.has(n))) return false;
     if (materialSet.size  > 0 && !r.materiaisFilamento.some((m) => materialSet.has(m))) return false;
+    if (corSet.size       > 0 && !r.coresFilamento.some((c) => corSet.has(c))) return false;
     return true;
   });
 
-  const filtroKey = [filtroNome.join("|"), filtroFilamento.join("|"), filtroMaterial.join("|")].join("__");
+  const filtroKey = [filtroNome.join("|"), filtroFilamento.join("|"), filtroMaterial.join("|"), filtroCor.join("|")].join("__");
 
-  const algumFiltroAtivo = filtroNome.length > 0 || filtroFilamento.length > 0 || filtroMaterial.length > 0;
+  const algumFiltroAtivo = filtroNome.length > 0 || filtroFilamento.length > 0 || filtroMaterial.length > 0 || filtroCor.length > 0;
 
   function limparTodosFiltros() {
-    setFiltroNome([]); setFiltroFilamento([]); setFiltroMaterial([]);
+    setFiltroNome([]); setFiltroFilamento([]); setFiltroMaterial([]); setFiltroCor([]);
   }
 
   if (!ready) return <main className="min-h-screen p-8 text-slate-100">Carregando...</main>;
@@ -662,7 +677,7 @@ export default function Page() {
           emptyText="Nenhum componente cadastrado."
         >
           {/* Filtros */}
-          <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-4">
+          <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4">
             <FiltroColuna
               label="Componente"
               opcoes={opcoesNome}
@@ -680,6 +695,12 @@ export default function Page() {
               opcoes={opcoesMaterial}
               selecionados={filtroMaterial}
               onChange={setFiltroMaterial}
+            />
+            <FiltroColuna
+              label="Cor"
+              opcoes={opcoesCor}
+              selecionados={filtroCor}
+              onChange={setFiltroCor}
             />
           </div>
 
