@@ -63,14 +63,61 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * PUT — atualiza uma linha específica pelo id_linha (PK).
+ * PUT — dois modos:
+ *
+ * 1) Edição de linha individual (comportamento original):
+ *    Body: { id_linha: number, id_componente_stl?, qtd_componente?, nome_arquivo_3mf? }
+ *
+ * 2) Substituição completa de um arquivo (novo):
+ *    Body: { id_3mf: number, nome_arquivo_3mf: string, componentes: { id_componente_stl, qtd_componente }[] }
+ *    Remove todas as linhas do id_3mf e reinsere com os novos dados.
  */
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
+
+    // ── Modo 2: substituição completa do arquivo ──────────────────────────
+    if (body.id_3mf && body.componentes) {
+      const id3mf = Number(body.id_3mf);
+      const nome  = String(body.nome_arquivo_3mf ?? "").trim();
+
+      if (!nome)
+        return NextResponse.json({ ok: false, error: "nome_arquivo_3mf é obrigatório." }, { status: 400 });
+
+      const componentes: { id_componente_stl: number; qtd_componente: number }[] = body.componentes || [];
+      if (!componentes.length)
+        return NextResponse.json({ ok: false, error: "Adicione ao menos 1 componente STL." }, { status: 400 });
+
+      // 1. Remove todas as linhas antigas do arquivo
+      const { error: delError } = await supabase
+        .from(TABLE)
+        .delete()
+        .eq("id_3mf", id3mf);
+      if (delError)
+        return NextResponse.json({ ok: false, error: delError.message }, { status: 500 });
+
+      // 2. Reinsere com os dados novos
+      const rows = componentes.map((c) => ({
+        id_3mf:            id3mf,
+        nome_arquivo_3mf:  nome,
+        id_componente_stl: Number(c.id_componente_stl),
+        qtd_componente:    Number(c.qtd_componente) || 1,
+      }));
+
+      const { data, error: insError } = await supabase.from(TABLE).insert(rows).select();
+      if (insError)
+        return NextResponse.json({ ok: false, error: insError.message }, { status: 500 });
+
+      return NextResponse.json({ ok: true, data });
+    }
+
+    // ── Modo 1: edição de linha individual (original) ─────────────────────
     const idLinha = body.id_linha;
     if (!idLinha)
-      return NextResponse.json({ ok: false, error: "id_linha não informado." }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "Informe id_linha (edição de linha) ou id_3mf + componentes (edição de arquivo)." },
+        { status: 400 }
+      );
 
     const payload: Record<string, unknown> = {};
     if (body.nome_arquivo_3mf  !== undefined) payload.nome_arquivo_3mf  = body.nome_arquivo_3mf  || null;
@@ -81,6 +128,7 @@ export async function PUT(request: NextRequest) {
       .from(TABLE).update(payload).eq("id_linha", idLinha).select();
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true, data });
+
   } catch {
     return NextResponse.json({ ok: false, error: "Falha ao atualizar." }, { status: 500 });
   }
