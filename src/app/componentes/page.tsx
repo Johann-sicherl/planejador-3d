@@ -47,11 +47,11 @@ function texto(valor: unknown) {
   return String(valor).trim();
 }
 
-// Extrai o nome do fabricante do objeto filamento — igual ao módulo de filamentos
-// A estrutura real é item.fabricante?.nome_fabricante (objeto aninhado)
+// Extrai o nome do fabricante do objeto filamento.
+// A API /api/options resolve o fabricante e injeta como campo flat: item.nome_fabricante
 function nomeFabricante(item: Registro | undefined): string {
   if (!item) return "";
-  return texto(item.fabricante?.nome_fabricante);
+  return texto(item.nome_fabricante);
 }
 
 function montarLabelFilamento(item: Registro | undefined) {
