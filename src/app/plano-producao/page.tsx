@@ -10,7 +10,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import {
   AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Edit3, Factory,
-  GripVertical, Maximize2, Minimize2, Package, Plus, Printer, Save, Sparkles, Trash2, X,
+  GripVertical, Info, Maximize2, Minimize2, Package, Plus, Printer, Save, Sparkles, Trash2, X,
 } from "lucide-react";
 import { Feedback, PageShell , useAuthGuard } from "../_shared";
 
@@ -1207,6 +1207,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
   const [mostrarFormFalhaStl, setMostrarFormFalhaStl] = useState(false);
   const [gramasFalhaStl,   setGramasFalhaStl]   = useState<Record<number,string>>({});
   const [tempoFalhaStl,    setTempoFalhaStl]    = useState("");
+  const [mostrarDetalhesMateriais, setMostrarDetalhesMateriais] = useState(false);
 
   const corPrioridade:Record<string,string>={
     Baixa:"border-emerald-500/30 bg-emerald-500/15 text-emerald-300",
@@ -1273,6 +1274,18 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
             </div>
             <span className="text-[10px] text-slate-500">{progresso}%</span>
           </div>
+        )}
+
+        {/* Botão detalhes de materiais */}
+        {options&&(
+          <button
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={(e)=>{e.stopPropagation();setMostrarDetalhesMateriais(v=>!v);}}
+            className={`shrink-0 rounded-lg p-1 transition-colors ${mostrarDetalhesMateriais?"bg-violet-400/20 text-violet-300 hover:bg-violet-400/30":"bg-white/5 text-slate-400 hover:bg-white/10 hover:text-violet-300"}`}
+            title="Ver detalhes de materiais"
+          >
+            <Info className="h-3.5 w-3.5"/>
+          </button>
         )}
 
         {/* Botão maximizar/minimizar */}
@@ -1811,6 +1824,136 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
         </>
       )}
     </article>
+
+    {/* ── Modal de detalhes de materiais ── */}
+    {mostrarDetalhesMateriais&&options&&createPortal(
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+        onPointerDown={()=>setMostrarDetalhesMateriais(false)}>
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm"/>
+        <div className="relative z-10 w-full max-w-md max-h-[80vh] overflow-y-auto rounded-2xl border border-violet-500/30 bg-slate-900 shadow-2xl shadow-black/60"
+          onPointerDown={(e)=>e.stopPropagation()}>
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Info className="h-4 w-4 text-violet-400"/>
+              <span className="text-sm font-black text-white">Detalhes de Materiais</span>
+            </div>
+            <button
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={()=>setMostrarDetalhesMateriais(false)}
+              className="rounded-lg p-1 text-slate-400 hover:bg-white/10 hover:text-slate-200 transition-colors">
+              <X className="h-4 w-4"/>
+            </button>
+          </div>
+          {/* Pedido */}
+          <div className="px-4 pt-3 pb-1">
+            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Pedido</p>
+            <p className="text-sm font-black text-white">{nomes.pedidos.get(Number(plano.id_pedido))||`Pedido ${plano.id_pedido}`}</p>
+          </div>
+          {/* Tabela de materiais */}
+          {(()=>{
+            const ids3mfDoPedido=nomes.pedido3mfs.get(Number(plano.id_pedido))||[];
+            const linhas=(options.arquivos3mf||[]).filter((a)=>ids3mfDoPedido.includes(Number(a.id_3mf)));
+
+            type FilInfo={label:string;total:number;gasto:number};
+            const filMap=new Map<number,FilInfo>();
+
+            linhas.forEach((a,i)=>{
+              const comp=(options.componentes||[]).find((c)=>Number(c.id_componente_stl)===Number(a.id_componente_stl));
+              if (!comp) return;
+              const lineId=Number(a.id_linha??i);
+              const isConcluido=stlsConcluidos.includes(lineId);
+              const qtd=Number(a.qtd_componente||1);
+              for (let n=1;n<=8;n++) {
+                const idFil=Number((comp as Record<string,unknown>)[`id_filamento${n}`]||0);
+                const gramas=Number((comp as Record<string,unknown>)[`gramas_filamento_${n}`]||0);
+                if (!idFil||gramas<=0) continue;
+                const fil=(options.filamentos||[]).find((f)=>Number(f.id_filamento)===idFil);
+                const nomeFil=fil
+                  ?`${String(fil.nome_filamento??"")}${fil.cor_filamento?` · ${fil.cor_filamento}`:""}`
+                  :`Filamento ${idFil}`;
+                const gramasLinha=Number((gramas*qtd).toFixed(3));
+                const prev=filMap.get(idFil);
+                filMap.set(idFil,{
+                  label:nomeFil,
+                  total:Number(((prev?.total||0)+gramasLinha).toFixed(3)),
+                  gasto:Number(((prev?.gasto||0)+(isConcluido?gramasLinha:0)).toFixed(3)),
+                });
+              }
+            });
+
+            const filLista=Array.from(filMap.values());
+
+            if (filLista.length===0) return (
+              <div className="px-4 py-6 text-center">
+                <p className="text-xs text-slate-500">Nenhum material cadastrado nos componentes deste pedido.</p>
+              </div>
+            );
+
+            const totalGeral=filLista.reduce((acc,f)=>acc+f.total,0);
+            const gastoGeral=filLista.reduce((acc,f)=>acc+f.gasto,0);
+
+            return (
+              <div className="px-4 pb-4 pt-2 space-y-3">
+                {/* Resumo geral */}
+                <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 flex items-center justify-between">
+                  <div className="text-center">
+                    <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Total</p>
+                    <p className="text-base font-black text-white">{totalGeral.toFixed(1)}g</p>
+                  </div>
+                  <div className="h-8 w-px bg-white/10"/>
+                  <div className="text-center">
+                    <p className="text-[10px] uppercase tracking-wider text-emerald-500 font-bold">Gasto</p>
+                    <p className="text-base font-black text-emerald-400">{gastoGeral.toFixed(1)}g</p>
+                  </div>
+                  <div className="h-8 w-px bg-white/10"/>
+                  <div className="text-center">
+                    <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Restante</p>
+                    <p className="text-base font-black text-slate-300">{(totalGeral-gastoGeral).toFixed(1)}g</p>
+                  </div>
+                </div>
+                {/* Lista por filamento */}
+                <div className="space-y-2">
+                  {filLista.map((f,idx)=>{
+                    const pct=f.total>0?Math.min(Math.round((f.gasto/f.total)*100),100):0;
+                    return (
+                      <div key={idx} className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-2">
+                        <p className="text-xs font-black text-slate-200 break-all">{f.label}</p>
+                        <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
+                          <div>
+                            <p className="text-slate-500 font-bold">Total</p>
+                            <p className="text-white font-black">{f.total.toFixed(1)}g</p>
+                          </div>
+                          <div>
+                            <p className="text-emerald-500 font-bold">Gasto</p>
+                            <p className="text-emerald-400 font-black">{f.gasto.toFixed(1)}g</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500 font-bold">Restante</p>
+                            <p className="text-slate-300 font-black">{(f.total-f.gasto).toFixed(1)}g</p>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="mb-1 flex justify-between text-[10px] text-slate-500">
+                            <span>Progresso de consumo</span>
+                            <span>{pct}%</span>
+                          </div>
+                          <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                            <div className="h-full rounded-full bg-emerald-400 transition-all" style={{width:`${pct}%`}}/>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-slate-600 text-center">* "Gasto" calculado com base nos componentes marcados como concluídos</p>
+              </div>
+            );
+          })()}
+        </div>
+      </div>,
+      document.body
+    )}
     </>
   );
 }
