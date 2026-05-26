@@ -1825,18 +1825,18 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
       )}
     </article>
 
-    {/* ── Modal de detalhes de materiais ── */}
+    {/* ── Modal de detalhes de materiais e tempo ── */}
     {mostrarDetalhesMateriais&&options&&createPortal(
       <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
         onPointerDown={()=>setMostrarDetalhesMateriais(false)}>
         <div className="absolute inset-0 bg-black/70 backdrop-blur-sm"/>
-        <div className="relative z-10 w-full max-w-md max-h-[80vh] overflow-y-auto rounded-2xl border border-violet-500/30 bg-slate-900 shadow-2xl shadow-black/60"
+        <div className="relative z-10 w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl border border-violet-500/30 bg-slate-900 shadow-2xl shadow-black/60"
           onPointerDown={(e)=>e.stopPropagation()}>
           {/* Header */}
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
             <div className="flex items-center gap-2">
               <Info className="h-4 w-4 text-violet-400"/>
-              <span className="text-sm font-black text-white">Detalhes de Materiais</span>
+              <span className="text-sm font-black text-white">Detalhes do Pedido</span>
             </div>
             <button
               onPointerDown={(e)=>e.stopPropagation()}
@@ -1846,17 +1846,20 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
             </button>
           </div>
           {/* Pedido */}
-          <div className="px-4 pt-3 pb-1">
-            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Pedido</p>
+          <div className="px-4 pt-3 pb-2">
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Pedido</p>
             <p className="text-sm font-black text-white">{nomes.pedidos.get(Number(plano.id_pedido))||`Pedido ${plano.id_pedido}`}</p>
           </div>
-          {/* Tabela de materiais */}
+          {/* Corpo: materiais + tempo lado a lado */}
           {(()=>{
             const ids3mfDoPedido=nomes.pedido3mfs.get(Number(plano.id_pedido))||[];
             const linhas=(options.arquivos3mf||[]).filter((a)=>ids3mfDoPedido.includes(Number(a.id_3mf)));
 
+            // ── Materiais ──
             type FilInfo={label:string;total:number;gasto:number};
             const filMap=new Map<number,FilInfo>();
+            // ── Tempo ──
+            let tempoTotal=0; let tempoGasto=0;
 
             linhas.forEach((a,i)=>{
               const comp=(options.componentes||[]).find((c)=>Number(c.id_componente_stl)===Number(a.id_componente_stl));
@@ -1864,6 +1867,9 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
               const lineId=Number(a.id_linha??i);
               const isConcluido=stlsConcluidos.includes(lineId);
               const qtd=Number(a.qtd_componente||1);
+              const tempMin=Number((comp as Record<string,unknown>).tempo_impressao_min||0)*qtd;
+              tempoTotal+=tempMin;
+              if (isConcluido) tempoGasto+=tempMin;
               for (let n=1;n<=8;n++) {
                 const idFil=Number((comp as Record<string,unknown>)[`id_filamento${n}`]||0);
                 const gramas=Number((comp as Record<string,unknown>)[`gramas_filamento_${n}`]||0);
@@ -1883,70 +1889,138 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
             });
 
             const filLista=Array.from(filMap.values());
-
-            if (filLista.length===0) return (
-              <div className="px-4 py-6 text-center">
-                <p className="text-xs text-slate-500">Nenhum material cadastrado nos componentes deste pedido.</p>
-              </div>
-            );
-
             const totalGeral=filLista.reduce((acc,f)=>acc+f.total,0);
             const gastoGeral=filLista.reduce((acc,f)=>acc+f.gasto,0);
+            const tempoRestante=tempoTotal-tempoGasto;
+            const tempoPct=tempoTotal>0?Math.min(Math.round((tempoGasto/tempoTotal)*100),100):0;
 
             return (
-              <div className="px-4 pb-4 pt-2 space-y-3">
-                {/* Resumo geral */}
-                <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 flex items-center justify-between">
-                  <div className="text-center">
-                    <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Total</p>
-                    <p className="text-base font-black text-white">{totalGeral.toFixed(1)}g</p>
+              <div className="grid grid-cols-2 gap-0 divide-x divide-white/10">
+
+                {/* ── Coluna esquerda: Materiais ── */}
+                <div className="px-4 pb-4 pt-1 space-y-3">
+                  <p className="text-[10px] uppercase tracking-wider text-violet-400 font-black pt-1">Materiais</p>
+                  {/* Resumo geral de gramas */}
+                  <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 flex items-center justify-between">
+                    <div className="text-center">
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Total</p>
+                      <p className="text-base font-black text-white">{totalGeral.toFixed(1)}g</p>
+                    </div>
+                    <div className="h-8 w-px bg-white/10"/>
+                    <div className="text-center">
+                      <p className="text-[10px] uppercase tracking-wider text-emerald-500 font-bold">Gasto</p>
+                      <p className="text-base font-black text-emerald-400">{gastoGeral.toFixed(1)}g</p>
+                    </div>
+                    <div className="h-8 w-px bg-white/10"/>
+                    <div className="text-center">
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Restante</p>
+                      <p className="text-base font-black text-slate-300">{(totalGeral-gastoGeral).toFixed(1)}g</p>
+                    </div>
                   </div>
-                  <div className="h-8 w-px bg-white/10"/>
-                  <div className="text-center">
-                    <p className="text-[10px] uppercase tracking-wider text-emerald-500 font-bold">Gasto</p>
-                    <p className="text-base font-black text-emerald-400">{gastoGeral.toFixed(1)}g</p>
-                  </div>
-                  <div className="h-8 w-px bg-white/10"/>
-                  <div className="text-center">
-                    <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Restante</p>
-                    <p className="text-base font-black text-slate-300">{(totalGeral-gastoGeral).toFixed(1)}g</p>
-                  </div>
+                  {filLista.length===0?(
+                    <p className="text-xs text-slate-500 text-center py-4">Nenhum material cadastrado.</p>
+                  ):(
+                    <div className="space-y-2">
+                      {filLista.map((f,idx)=>{
+                        const pct=f.total>0?Math.min(Math.round((f.gasto/f.total)*100),100):0;
+                        return (
+                          <div key={idx} className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-2">
+                            <p className="text-xs font-black text-slate-200 break-all">{f.label}</p>
+                            <div className="grid grid-cols-3 gap-1 text-center text-[11px]">
+                              <div>
+                                <p className="text-slate-500 font-bold">Total</p>
+                                <p className="text-white font-black">{f.total.toFixed(1)}g</p>
+                              </div>
+                              <div>
+                                <p className="text-emerald-500 font-bold">Gasto</p>
+                                <p className="text-emerald-400 font-black">{f.gasto.toFixed(1)}g</p>
+                              </div>
+                              <div>
+                                <p className="text-slate-500 font-bold">Restante</p>
+                                <p className="text-slate-300 font-black">{(f.total-f.gasto).toFixed(1)}g</p>
+                              </div>
+                            </div>
+                            <div>
+                              <div className="mb-1 flex justify-between text-[10px] text-slate-500">
+                                <span>Consumo</span>
+                                <span>{pct}%</span>
+                              </div>
+                              <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                                <div className="h-full rounded-full bg-emerald-400 transition-all" style={{width:`${pct}%`}}/>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-slate-600 text-center">* "Gasto" = componentes marcados como concluídos</p>
                 </div>
-                {/* Lista por filamento */}
-                <div className="space-y-2">
-                  {filLista.map((f,idx)=>{
-                    const pct=f.total>0?Math.min(Math.round((f.gasto/f.total)*100),100):0;
-                    return (
-                      <div key={idx} className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-2">
-                        <p className="text-xs font-black text-slate-200 break-all">{f.label}</p>
-                        <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
-                          <div>
-                            <p className="text-slate-500 font-bold">Total</p>
-                            <p className="text-white font-black">{f.total.toFixed(1)}g</p>
-                          </div>
-                          <div>
-                            <p className="text-emerald-500 font-bold">Gasto</p>
-                            <p className="text-emerald-400 font-black">{f.gasto.toFixed(1)}g</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-500 font-bold">Restante</p>
-                            <p className="text-slate-300 font-black">{(f.total-f.gasto).toFixed(1)}g</p>
-                          </div>
-                        </div>
-                        <div>
-                          <div className="mb-1 flex justify-between text-[10px] text-slate-500">
-                            <span>Progresso de consumo</span>
-                            <span>{pct}%</span>
-                          </div>
-                          <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-                            <div className="h-full rounded-full bg-emerald-400 transition-all" style={{width:`${pct}%`}}/>
-                          </div>
-                        </div>
+
+                {/* ── Coluna direita: Tempo ── */}
+                <div className="px-4 pb-4 pt-1 space-y-3">
+                  <p className="text-[10px] uppercase tracking-wider text-cyan-400 font-black pt-1">Tempo de Impressão</p>
+                  {/* Resumo geral de tempo */}
+                  <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 flex items-center justify-between">
+                    <div className="text-center">
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Total</p>
+                      <p className="text-base font-black text-white">{formatTempo(tempoTotal)}</p>
+                    </div>
+                    <div className="h-8 w-px bg-white/10"/>
+                    <div className="text-center">
+                      <p className="text-[10px] uppercase tracking-wider text-emerald-500 font-bold">Gasto</p>
+                      <p className="text-base font-black text-emerald-400">{formatTempo(tempoGasto)}</p>
+                    </div>
+                    <div className="h-8 w-px bg-white/10"/>
+                    <div className="text-center">
+                      <p className="text-[10px] uppercase tracking-wider text-amber-500 font-bold">Falta</p>
+                      <p className="text-base font-black text-amber-400">{formatTempo(tempoRestante)}</p>
+                    </div>
+                  </div>
+                  {/* Barra de progresso de tempo */}
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-2">
+                    <div className="flex justify-between text-[10px] text-slate-400">
+                      <span>Progresso de tempo</span>
+                      <span className="font-black text-cyan-400">{tempoPct}%</span>
+                    </div>
+                    <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
+                      <div className="h-full rounded-full bg-cyan-400 transition-all" style={{width:`${tempoPct}%`}}/>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-2 py-2 text-center">
+                        <p className="text-[10px] text-emerald-500 font-bold uppercase tracking-wider">Concluído</p>
+                        <p className="text-sm font-black text-emerald-400 mt-0.5">{formatTempo(tempoGasto)}</p>
                       </div>
-                    );
-                  })}
+                      <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-2 py-2 text-center">
+                        <p className="text-[10px] text-amber-500 font-bold uppercase tracking-wider">Faltando</p>
+                        <p className="text-sm font-black text-amber-400 mt-0.5">{formatTempo(tempoRestante)}</p>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Breakdown por STL */}
+                  {linhas.length>0&&(
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Por componente</p>
+                      {linhas.map((a,i)=>{
+                        const comp=(options.componentes||[]).find((c)=>Number(c.id_componente_stl)===Number(a.id_componente_stl));
+                        const nome=comp?String((comp as Record<string,unknown>).nome_componente??(comp as Record<string,unknown>).nome??a.id_componente_stl):String(a.id_componente_stl??"?");
+                        const lineId=Number(a.id_linha??i);
+                        const isConcluido=stlsConcluidos.includes(lineId);
+                        const qtd=Number(a.qtd_componente||1);
+                        const tempMin=Number((comp as Record<string,unknown>|undefined)?.tempo_impressao_min||0)*qtd;
+                        return (
+                          <div key={i} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] border ${isConcluido?"border-emerald-500/20 bg-emerald-500/10":"border-white/5 bg-black/20"}`}>
+                            <span className={`shrink-0 text-[10px] ${isConcluido?"text-emerald-400":"text-slate-600"}`}>{isConcluido?"✓":"○"}</span>
+                            <span className={`flex-1 truncate font-bold ${isConcluido?"text-emerald-300 line-through":"text-slate-300"}`}>{nome}</span>
+                            <span className={`shrink-0 font-black tabular-nums ${isConcluido?"text-emerald-400":"text-slate-400"}`}>{formatTempo(tempMin)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-slate-600 text-center">* Tempo baseado nos dados cadastrados por componente</p>
                 </div>
-                <p className="text-[10px] text-slate-600 text-center">* "Gasto" calculado com base nos componentes marcados como concluídos</p>
+
               </div>
             );
           })()}
