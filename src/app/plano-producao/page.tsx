@@ -29,6 +29,7 @@ type PlanoProducao = {
   progresso?: number | null;
   peso_estimado_g?: number | null;
   stls_concluidos?: number[] | null;
+  stls_em_producao?: number[] | null;
   stl_carretel_map?: Record<string,number> | null;
 };
 
@@ -778,6 +779,33 @@ export default function PlanoProducaoPage() {
     }
   }
 
+  /**
+   * Salva stls_em_producao em um único PUT, com rollback otimista.
+   * Indica quais componentes estão sendo produzidos no momento (checkbox amarelo).
+   */
+  async function salvarStlsEmProducao(idPedido: number, stls: number[]) {
+    const planoAtual = planos.find((p) => p.id_pedido === idPedido);
+    if (!planoAtual) return;
+    setPlanos((prev) => prev.map((p) =>
+      p.id_pedido === idPedido ? { ...p, stls_em_producao: stls } : p
+    ));
+    try {
+      const r = await fetch("/api/plano-producao", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...planoAtual, stls_em_producao: stls }),
+      });
+      const res = await r.json();
+      if (!r.ok || !res.ok) throw new Error(res.error || "Erro ao salvar status de produção.");
+    } catch {
+      // Rollback
+      setPlanos((prev) => prev.map((p) =>
+        p.id_pedido === idPedido
+          ? { ...p, stls_em_producao: planoAtual.stls_em_producao ?? [] }
+          : p
+      ));
+    }
+  }
+
   // Registra falha: mantém STL no card original, cria cópia na coluna Falha
   async function registrarFalhaStls(idPedido: number, stlsComFalha: number[], gramasPerdidoStr: string, tempoPerdido: string) {
     const planoAtual = planos.find((p) => p.id_pedido === idPedido);
@@ -1094,6 +1122,7 @@ export default function PlanoProducaoPage() {
                   onRegistrarFalhaStls={registrarFalhaStls}
                   onAtualizarProgresso={atualizarProgresso}
                   onSalvarStls={salvarStlsConcluidos}
+                  onSalvarStlsEmProducao={salvarStlsEmProducao}
                   finalizacaoEmAndamento={finalizacaoEmAndamento}
                   onFinSlotChange={(idx,val)=>setFinalizacaoEmAndamento((prev)=>prev?{...prev,slots:prev.slots.map((s,j)=>j===idx?{...s,idEstoqueEscolhido:val}:s)}:null)}
                   onFinConfirm={confirmarFinalizacao} onFinCancel={cancelarFinalizacao}
@@ -1106,7 +1135,7 @@ export default function PlanoProducaoPage() {
               );
             })}
           </section>
-          <DragOverlay>{activePlano?<CardPlano plano={activePlano} nomes={nomes} flutuando onSalvarStls={salvarStlsConcluidos} />:null}</DragOverlay>
+          <DragOverlay>{activePlano?<CardPlano plano={activePlano} nomes={nomes} flutuando onSalvarStls={salvarStlsConcluidos} onSalvarStlsEmProducao={salvarStlsEmProducao} />:null}</DragOverlay>
         </DndContext>
       )}
 
@@ -1137,7 +1166,7 @@ function Indicador({titulo,valor,subtitulo,vermelho=false}:{titulo:string;valor:
   );
 }
 
-function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,onSalvarStls,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,falhaCarretelEmAndamento,onFalhaCarretelSlotChange,onFalhaCarretelSlotGramas,onFalhaCarretelTempo,onFalhaCarretelConfirm,onFalhaCarretelCancel,onMover,onEdit,onDelete}:{
+function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,onSalvarStls,onSalvarStlsEmProducao,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,falhaCarretelEmAndamento,onFalhaCarretelSlotChange,onFalhaCarretelSlotGramas,onFalhaCarretelTempo,onFalhaCarretelConfirm,onFalhaCarretelCancel,onMover,onEdit,onDelete}:{
   coluna:{id:StatusProducao;titulo:string;subtitulo:string;bordaTopo:string};
   planos:PlanoProducao[]; nomes:Nomes; options:OptionsPayload|null; falhaEmAndamento:FalhaEmAndamento|null;
   onFalhaChange:(field:"gramasPerdido"|"tempoPerdido",value:string)=>void;
@@ -1145,6 +1174,7 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
   onRegistrarFalhaStls:(idPedido:number,stls:number[],gramas:string,tempo:string)=>void;
   onAtualizarProgresso:(idPedido:number,progresso:number)=>void;
   onSalvarStls:(idPedido:number,stls:number[],progresso:number)=>void;
+  onSalvarStlsEmProducao:(idPedido:number,stls:number[])=>void;
   finalizacaoEmAndamento:FinalizacaoEmAndamento|null;
   onFinSlotChange:(idx:number,val:string)=>void;
   onFinConfirm:()=>void; onFinCancel:()=>void;
@@ -1176,7 +1206,7 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
             <CardPlano key={plano.id_pedido} plano={plano} nomes={nomes} options={options}
               falhaEmAndamento={falhaEmAndamento?.idPedido===plano.id_pedido?falhaEmAndamento:null}
               onFalhaChange={onFalhaChange} onFalhaConfirm={onFalhaConfirm} onFalhaCancel={onFalhaCancel}
-              onRegistrarFalhaStls={onRegistrarFalhaStls} onAtualizarProgresso={onAtualizarProgresso} onSalvarStls={onSalvarStls}
+              onRegistrarFalhaStls={onRegistrarFalhaStls} onAtualizarProgresso={onAtualizarProgresso} onSalvarStls={onSalvarStls} onSalvarStlsEmProducao={onSalvarStlsEmProducao}
               finalizacaoEmAndamento={finalizacaoEmAndamento?.idPedido===plano.id_pedido?finalizacaoEmAndamento:null}
               onFinSlotChange={onFinSlotChange} onFinConfirm={onFinConfirm} onFinCancel={onFinCancel}
               falhaCarretelEmAndamento={falhaCarretelEmAndamento?.idPedido===plano.id_pedido?falhaCarretelEmAndamento:null}
@@ -1191,13 +1221,14 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
   );
 }
 
-function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,onSalvarStls,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,falhaCarretelEmAndamento,onFalhaCarretelSlotChange,onFalhaCarretelSlotGramas,onFalhaCarretelTempo,onFalhaCarretelConfirm,onFalhaCarretelCancel,onMover,onEdit,onDelete}:{
+function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,onSalvarStls,onSalvarStlsEmProducao,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,falhaCarretelEmAndamento,onFalhaCarretelSlotChange,onFalhaCarretelSlotGramas,onFalhaCarretelTempo,onFalhaCarretelConfirm,onFalhaCarretelCancel,onMover,onEdit,onDelete}:{
   plano:PlanoProducao; nomes:Nomes; options?:OptionsPayload|null; flutuando?:boolean; falhaEmAndamento?:FalhaEmAndamento|null;
   onFalhaChange?:(field:"gramasPerdido"|"tempoPerdido",value:string)=>void;
   onFalhaConfirm?:()=>void; onFalhaCancel?:()=>void;
   onRegistrarFalhaStls?:(idPedido:number,stls:number[],gramas:string,tempo:string)=>void;
   onAtualizarProgresso?:(idPedido:number,progresso:number)=>void;
   onSalvarStls?:(idPedido:number,stls:number[],progresso:number)=>void;
+  onSalvarStlsEmProducao?:(idPedido:number,stls:number[])=>void;
   finalizacaoEmAndamento?:FinalizacaoEmAndamento|null;
   onFinSlotChange?:(idx:number,val:string)=>void;
   onFinConfirm?:()=>void; onFinCancel?:()=>void;
@@ -1223,10 +1254,15 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
 
   // Card começa colapsado; expande ao clicar no chevron
   const [expandido,setExpandido]=useState(false);
-  // Checkboxes de STL — inicializa do banco (plano.stls_concluidos)
+  // Checkboxes de STL — inicializa do banco
   const [stlsConcluidos,   setStlsConcluidos]   = useState<number[]>(
     () => Array.isArray((plano as Record<string,unknown>).stls_concluidos)
       ? ((plano as Record<string,unknown>).stls_concluidos as number[])
+      : []
+  );
+  const [stlsEmProducao,   setStlsEmProducao]   = useState<number[]>(
+    () => Array.isArray((plano as Record<string,unknown>).stls_em_producao)
+      ? ((plano as Record<string,unknown>).stls_em_producao as number[])
       : []
   );
   const [stlsComFalha,     setStlsComFalha]     = useState<number[]>([]);
@@ -1445,13 +1481,30 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                       const temFilamentos=itensFilamento.length>0;
                       const tudoOk=itensFilamento.every(it=>it.ok);
 
+                      const isEmProducao=stlsEmProducao.includes(lineId);
                       return (
-                        <div key={i} className={`rounded-lg transition-colors ${isConcluido?"bg-emerald-500/10":isFalhaStl?"bg-red-500/10":""}`}>
+                        <div key={i} className={`rounded-lg transition-colors ${isConcluido?"bg-emerald-500/10":isEmProducao?"bg-yellow-500/10":isFalhaStl?"bg-red-500/10":""}`}>
                           <div className="flex items-center gap-1.5 px-1.5 py-1">
+                            {/* Checkbox amarelo: Em produção */}
+                            <input type="checkbox" checked={isEmProducao}
+                              onChange={()=>{
+                                if (isConcluido) return; // concluído não pode voltar a "em produção"
+                                const novo=isEmProducao?stlsEmProducao.filter(x=>x!==lineId):[...stlsEmProducao,lineId];
+                                setStlsEmProducao(novo);
+                                onSalvarStlsEmProducao?.(plano.id_pedido, novo);
+                              }}
+                              className="h-3 w-3 accent-yellow-400 shrink-0 cursor-pointer" title="Em produção"/>
+                            {/* Checkbox verde: Concluído */}
                             <input type="checkbox" checked={isConcluido}
                               onChange={()=>{
                                 const novo=isConcluido?stlsConcluidos.filter(x=>x!==lineId):[...stlsConcluidos,lineId];
                                 setStlsConcluidos(novo);
+                                // Ao concluir: remove de "em produção" automaticamente
+                                if (!isConcluido && isEmProducao) {
+                                  const novoEm=stlsEmProducao.filter(x=>x!==lineId);
+                                  setStlsEmProducao(novoEm);
+                                  onSalvarStlsEmProducao?.(plano.id_pedido, novoEm);
+                                }
                                 // Progresso por tempo: soma tempo dos STLs concluídos / tempo total
                                 const tempoTotal=linhas.reduce((acc,l)=>{
                                   const c=(options?.componentes||[]).find((x)=>Number(x.id_componente_stl)===Number(l.id_componente_stl));
@@ -1465,11 +1518,10 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                                   return acc+Number((c as Record<string,unknown>|undefined)?.tempo_impressao_min||0)*Number(l.qtd_componente||1);
                                 },0);
                                 const pct=tempoTotal>0?Math.min(Math.round((tempoConcluido/tempoTotal)*100),100):Math.round((novo.length/linhas.length)*100);
-                                // PUT único com stls_concluidos + progresso — sem race condition.
                                 onSalvarStls?.(plano.id_pedido, novo, Math.min(pct, 100));
                               }}
                               className="h-3 w-3 accent-emerald-400 shrink-0 cursor-pointer" title="Concluido"/>
-                            <span className={`flex-1 truncate text-xs ${isConcluido?"line-through text-slate-600":isFalhaStl?"text-red-400":"text-slate-400"}`}>{nome}</span>
+                            <span className={`flex-1 truncate text-xs ${isConcluido?"line-through text-slate-600":isEmProducao?"text-yellow-300":isFalhaStl?"text-red-400":"text-slate-400"}`}>{nome}</span>
                             <span className="shrink-0 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-500">x{String(a.qtd_componente??1)}</span>
                             <input type="checkbox" checked={isFalhaStl}
                               onChange={()=>setStlsComFalha(isFalhaStl?stlsComFalha.filter(x=>x!==lineId):[...stlsComFalha,lineId])}
