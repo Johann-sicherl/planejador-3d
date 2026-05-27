@@ -15,6 +15,7 @@ const FIELDS = [
   "progresso",
   "peso_estimado_g",
   "stls_concluidos",
+  "stls_em_producao",
   "stl_carretel_map",
 ];
 
@@ -37,6 +38,12 @@ function sanitize(body: Record<string, unknown>) {
       // Só inclui no payload quando o campo foi explicitamente enviado.
       // Se vier undefined (não enviado), pula — assim o valor no banco é preservado.
       // Se vier null ou [] o caller quer limpar deliberadamente.
+      if (value === undefined) continue;
+      payload[field] = Array.isArray(value) ? value.map(Number) : [];
+      continue;
+    }
+    if (field === "stls_em_producao") {
+      // Mesmo tratamento de stls_concluidos: undefined → pula (preserva banco).
       if (value === undefined) continue;
       payload[field] = Array.isArray(value) ? value.map(Number) : [];
       continue;
