@@ -23,6 +23,7 @@ type Params = {
   desgaste_hora:    number; // R$/hora de desgaste
   tempo_horas:      number; // Horas de impressão
   qtd_pedido:       number; // Quantidade de peças
+  margem_lucro_pct: number; // % de margem de lucro líquido
 };
 
 // Faixas de preço geradas (espelham a planilha)
@@ -51,11 +52,12 @@ const FAIXAS_DEF = [
 ];
 
 const PARAMS_DEFAULT: Params = {
-  custo_kwh:     1.16,
-  kw_maquina:    630,
-  desgaste_hora: 1.0,
-  tempo_horas:   0,
-  qtd_pedido:    1,
+  custo_kwh:        1.16,
+  kw_maquina:       630,
+  desgaste_hora:    1.0,
+  tempo_horas:      0,
+  qtd_pedido:       1,
+  margem_lucro_pct: 70,
 };
 
 const FIELD = "w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none focus:border-cyan-400";
@@ -71,7 +73,7 @@ function calcularFaixas(
   custo_mat_prima: number, // custo total de material (R$)
   params: Params,
 ): Faixa[] {
-  const { custo_kwh, kw_maquina, desgaste_hora, tempo_horas, qtd_pedido } = params;
+  const { custo_kwh, kw_maquina, desgaste_hora, tempo_horas, qtd_pedido, margem_lucro_pct } = params;
 
   // Custos unitários
   const custo_elet_hora  = (kw_maquina / 1000) * custo_kwh;          // R$/hora elétrico
@@ -81,7 +83,7 @@ function calcularFaixas(
 
   return FAIXAS_DEF.map(({ label, mult }) => {
     const preco_unit  = custo_unit_base * mult;
-    const lucro_liq   = preco_unit * 0.7;                              // ~70% do preço = lucro líquido
+    const lucro_liq   = preco_unit * (margem_lucro_pct / 100);          // margem configurável % do preço = lucro líquido
     const lucro_pct   = custo_unit_base > 0 ? lucro_liq / custo_unit_base : 0;
     const vr_total    = preco_unit * qtd_pedido;
     const lucro_total = (preco_unit - custo_unit_base) * qtd_pedido;
@@ -126,6 +128,9 @@ export default function Page() {
   // Faixa escolhida para salvar
   const [faixaEscolhida, setFaixaEscolhida] = useState<Faixa | null>(null);
 
+  // Filamentos sem custo cadastrado
+  const [avisoSemCusto, setAvisoSemCusto] = useState<string[]>([]);
+
   useEffect(() => {
     fetch("/api/options", { cache: "no-store" })
       .then((r) => r.json())
@@ -135,12 +140,12 @@ export default function Page() {
 
   // Quando componente muda → preenche peso e custo de material
   useEffect(() => {
-    if (!idComp || !options) { setCustoMat(null); setPesoTotal(null); return; }
+    if (!idComp || !options) { setCustoMat(null); setPesoTotal(null); setAvisoSemCusto([]); return; }
 
     const comp = options.componentes.find(
       (c) => String(c.id_componente_stl) === idComp
     );
-    if (!comp) { setCustoMat(null); setPesoTotal(null); return; }
+    if (!comp) { setCustoMat(null); setPesoTotal(null); setAvisoSemCusto([]); return; }
 
     let pesoTotal = 0;
     let custoTotal = 0;
@@ -161,6 +166,19 @@ export default function Page() {
     setPesoTotal(pesoTotal > 0 ? pesoTotal : null);
     setCustoMat(custoTotal > 0 ? custoTotal : null);
 
+    // Detect filaments without cost
+    const semCusto: string[] = [];
+    for (let i = 1; i <= 8; i++) {
+      const idFil = comp[`id_filamento${i}`] as number | null;
+      const gramas = comp[`gramas_filamento_${i}`] as number | null;
+      if (!idFil || !gramas || gramas <= 0) continue;
+      const fil = options.filamentos.find((f) => Number(f.id_filamento) === Number(idFil));
+      if (!fil || !Number(fil.custo_medio_brl)) {
+        semCusto.push(fil ? String(fil.nome_filamento ?? `Filamento ${idFil}`) : `Filamento ${idFil}`);
+      }
+    }
+    setAvisoSemCusto(semCusto);
+
     // Preenche tempo de impressão convertendo minutos → horas (2 casas decimais)
     const minutos = Number(comp.tempo_impressao_min ?? 0);
     if (minutos > 0) {
@@ -170,7 +188,7 @@ export default function Page() {
 
   // Quando pedido muda → soma filamentos × qtd de todos os STLs de todos os 3MFs
   useEffect(() => {
-    if (!idPedido || !options) { if (!idComp) { setCustoMat(null); setPesoTotal(null); } return; }
+    if (!idPedido || !options) { if (!idComp) { setCustoMat(null); setPesoTotal(null); setAvisoSemCusto([]); } return; }
     if (idComp) return; // se componente está selecionado, ele tem prioridade
 
     // ids dos 3MFs deste pedido
@@ -178,7 +196,7 @@ export default function Page() {
       .filter((p) => String(p.id_pedido) === idPedido)
       .map((p) => Number(p.id_3mf));
 
-    if (!ids3mf.length) { setCustoMat(null); setPesoTotal(null); return; }
+    if (!ids3mf.length) { setCustoMat(null); setPesoTotal(null); setAvisoSemCusto([]); return; }
 
     // linhas do cadastro_3mf (cada linha = 1 STL dentro de 1 3MF)
     const linhas = (options.arquivos3mf || []).filter((a) => ids3mf.includes(Number(a.id_3mf)));
@@ -186,6 +204,7 @@ export default function Page() {
     let pesoAcc  = 0;
     let custoAcc = 0;
     let tempoAcc = 0;
+    const semCusto: string[] = [];
 
     for (const linha of linhas) {
       const comp = (options.componentes || []).find(
@@ -202,6 +221,10 @@ export default function Page() {
         const custoKg = fil ? Number(fil.custo_medio_brl) || 0 : 0;
         pesoAcc  += gramas * qtd;
         custoAcc += (gramas / 1000) * custoKg * qtd;
+        if (!fil || !Number(fil.custo_medio_brl)) {
+          const nome = fil ? String(fil.nome_filamento ?? `Filamento ${idFil}`) : `Filamento ${idFil}`;
+          if (!semCusto.includes(nome)) semCusto.push(nome);
+        }
       }
 
       const minutos = Number(comp.tempo_impressao_min ?? 0);
@@ -210,17 +233,20 @@ export default function Page() {
 
     setPesoTotal(pesoAcc > 0 ? Math.round(pesoAcc * 1000) / 1000 : null);
     setCustoMat(custoAcc > 0 ? Math.round(custoAcc * 1000) / 1000 : null);
+    setAvisoSemCusto(semCusto);
     if (tempoAcc > 0) {
       setParams((p) => ({ ...p, tempo_horas: Math.round(tempoAcc * 100) / 100 }));
     }
   }, [idPedido, idComp, options]);
   function handleSelectComp(v: string) {
     setIdComp(v);
+    setAvisoSemCusto([]);
     if (v) { setIdPedido(""); }
   }
 
   function handleSelectPedido(v: string) {
     setIdPedido(v);
+    setAvisoSemCusto([]);
     if (v) { setIdComp(""); setCustoMat(null); setPesoTotal(null); }
   }
 
@@ -356,8 +382,10 @@ export default function Page() {
                   <span className="text-slate-400">Custo de matéria prima</span>
                   <span className="font-bold text-cyan-300">{custoMat != null ? brl(custoMat) : "—"}</span>
                 </div>
-                {custoMat == null && (
-                  <p className="text-xs text-amber-400">⚠ Filamentos ou custos não cadastrados para este componente.</p>
+                {avisoSemCusto.length > 0 && (
+                  <p className="text-xs text-amber-400">
+                    ⚠ Custo não cadastrado para: {avisoSemCusto.join(", ")}. Os preços podem estar incorretos.
+                  </p>
                 )}
               </div>
             )}
@@ -403,6 +431,13 @@ export default function Page() {
                 <input type="number" min="0" step="0.10"
                   value={params.desgaste_hora}
                   onChange={(e) => setParams((p) => ({ ...p, desgaste_hora: Number(e.target.value) || 0 }))}
+                  className={FIELD_SM} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-bold text-slate-400">Margem lucro líq. (%)</label>
+                <input type="number" min="0" max="100" step="1"
+                  value={params.margem_lucro_pct}
+                  onChange={(e) => setParams((p) => ({ ...p, margem_lucro_pct: Number(e.target.value) || 0 }))}
                   className={FIELD_SM} />
               </div>
               <div>

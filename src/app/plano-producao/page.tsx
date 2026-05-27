@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
   PointerSensor, useDroppable, useSensor, useSensors,
@@ -142,10 +142,23 @@ function calcPeso3mf(opts: OptionsPayload|null, id3mfStr: string) {
 function calcPesoPedido(opts: OptionsPayload|null, idPedStr: string) {
   if (!opts||!idPedStr) return "";
   const idPed=Number(idPedStr); if (Number.isNaN(idPed)) return "";
-  const ped=(opts.pedidos||[]).find((i)=>Number(i.id_pedido)===idPed);
-  const id3mf=numField(ped,["id_3mf","id_arquivo_3mf","id_arquivo"]);
-  if (id3mf===null) return "";
-  return calcPeso3mf(opts,String(id3mf));
+  // Gather all 3MF ids for this pedido
+  const ids3mf=(opts.pedido3mfs||[])
+    .filter((p)=>Number(p.id_pedido)===idPed)
+    .map((p)=>Number(p.id_3mf));
+  if (!ids3mf.length) {
+    // Fallback: use id_3mf from pedido record
+    const ped=(opts.pedidos||[]).find((i)=>Number(i.id_pedido)===idPed);
+    const id3mf=numField(ped,["id_3mf","id_arquivo_3mf","id_arquivo"]);
+    if (id3mf===null) return "";
+    return calcPeso3mf(opts,String(id3mf));
+  }
+  let total=0;
+  for (const id3mf of ids3mf) {
+    const p=calcPeso3mf(opts,String(id3mf));
+    if (p) total+=Number(p);
+  }
+  return total>0?String(Number(total.toFixed(3))):"";
 }
 
 export default function PlanoProducaoPage() {
@@ -166,6 +179,7 @@ export default function PlanoProducaoPage() {
   const [sugestaoImp,setSugestaoImp]=useState<{idImpressora:number;nomeImpressora:string;tempoMin:number}|null>(null);
   const [falhaCarretelEmAndamento,setFalhaCarretelEmAndamento]=useState<FalhaCarretelEmAndamento|null>(null);
   const [finalizacaoEmAndamento,setFinalizacaoEmAndamento]=useState<FinalizacaoEmAndamento|null>(null);
+  const savingRef = useRef(false);
 
   const sensors=useSensors(useSensor(PointerSensor,{activationConstraint:{distance:8}}));
 
@@ -305,6 +319,8 @@ export default function PlanoProducaoPage() {
 
   async function salvarPlano(event:React.FormEvent) {
     event.preventDefault();
+    if (savingRef.current) return;
+    savingRef.current = true;
     try {
       setSaving(true); setErro(""); setMensagem("");
       // id_3mf = primeiro 3MF do pedido (para compatibilidade com banco)
@@ -363,7 +379,11 @@ export default function PlanoProducaoPage() {
         // 3. FFD: ordena STLs do maior para o menor consumo, aloca no primeiro carretel com saldo
         const stlCarretelMap:Record<number,number>={};
         const reservas:Record<number,number>={}; // id_linha_estoque → gramas reservadas nesta rodada
-        const necessidadesOrdenadas=[...necessidades].sort((a,b)=>b.gramas-a.gramas);
+        const necessidadesOrdenadas=[...necessidades].sort((a,b)=>
+          a.id_filamento!==b.id_filamento
+            ? a.id_filamento-b.id_filamento
+            : b.gramas-a.gramas
+        );
 
         for (const nec of necessidadesOrdenadas) {
           const candidatos=carreteis.filter(c=>c.id_filamento===nec.id_filamento&&c.saldo>=nec.gramas);
@@ -396,7 +416,7 @@ export default function PlanoProducaoPage() {
       setFormOpen(false); setEditingId(null); setForm(EMPTY_FORM);
       await carregarDados();
     } catch(err) { setErro(err instanceof Error?err.message:"Erro ao salvar."); }
-    finally { setSaving(false); }
+    finally { setSaving(false); savingRef.current = false; }
   }
 
   const ORDEM_COLUNAS: StatusProducao[] = ["pedidos","fila","producao","finalizado","falha"];
@@ -531,34 +551,8 @@ export default function PlanoProducaoPage() {
         setMensagem("Pedido finalizado.");
         return;
       }
-      // Debita direto, sem abrir modal
-      setPlanos((prev) => prev.map((p) => p.id_pedido === idPedido ? { ...p, status_producao: "finalizado", progresso: 100 } : p));
-      setFinalizacaoEmAndamento({ idPedido, statusAnterior: planoAtual.status_producao || "pedidos", slots, salvando: true });
-      try {
-        const r1 = await fetch("/api/plano-producao", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...planoAtual, status_producao: "finalizado", progresso: 100 }) });
-        const d1 = await r1.json();
-        if (!r1.ok || !d1.ok) throw new Error(d1.error || "Erro ao finalizar.");
-        for (const slot of slots) {
-          if (!slot.idEstoqueEscolhido) continue;
-          const parts = slot.idEstoqueEscolhido.split("_");
-          const idFilStr = parts[0];
-          const localizacao = parts.slice(1, -1).join("_");
-          const idx = Number(parts[parts.length - 1]);
-          await fetch("/api/estoque-debito", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id_filamento: Number(idFilStr), localizacao: localizacao || undefined, idx: Number.isNaN(idx) ? 0 : idx, gramas: slot.gramas }),
-          });
-        }
-        setMensagem("Pedido finalizado e estoque debitado automaticamente.");
-        setFinalizacaoEmAndamento(null);
-        // Libera reservas — o débito real já foi feito acima
-        await fetch(`/api/reservas-estoque?id_pedido=${idPedido}`,{method:"DELETE"});
-        await carregarDados();
-      } catch (err) {
-        setPlanos((prev) => prev.map((p) => p.id_pedido === idPedido ? { ...p, status_producao: planoAtual.status_producao || "pedidos" } : p));
-        setErro(err instanceof Error ? err.message : "Erro ao finalizar.");
-        setFinalizacaoEmAndamento(null);
-      }
+      // Abre modal para o usuário confirmar antes de debitar
+      setFinalizacaoEmAndamento({ idPedido, statusAnterior: planoAtual.status_producao || "pedidos", slots, salvando: false });
       return;
     }
 

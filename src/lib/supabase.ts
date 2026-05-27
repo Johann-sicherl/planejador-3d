@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 
@@ -15,5 +16,12 @@ if (!supabaseUrl || !supabasePublicKey) {
   throw new Error("Supabase environment variables are missing");
 }
 
-export const supabase = createClient(supabaseUrl, supabasePublicKey);
+/**
+ * Fix #1 — Cliente de browser usando @supabase/ssr.
+ * Armazena tokens em cookies (não localStorage), permitindo que o
+ * middleware leia a sessão no servidor para proteger as rotas de API.
+ */
+export const supabase = createBrowserClient(supabaseUrl, supabasePublicKey);
+
+/** Cliente server-side com service-role key (somente em rotas de API). */
 export const supabaseAdmin = createClient(supabaseUrl, supabaseSecretKey);

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "../../../lib/supabase";
 
 type Row = Record<string, any>;
@@ -43,7 +43,19 @@ function montarLabelFilamento(row: Row) {
   return partes.join(" • ");
 }
 
-export async function GET() {
+/**
+ * Fix #8 — Carregamento seletivo via ?only=chave1,chave2,...
+ * Chaves disponíveis: clientes, impressoras, componentes, arquivos3mf,
+ *   filamentos, fabricantesFilamentos, pedidos, execucoes,
+ *   planoProducao, pedido3mfs, compImpressoras
+ * Sem parâmetro → carrega tudo (comportamento original).
+ */
+export async function GET(request: NextRequest) {
+  const url    = new URL(request.url);
+  const only   = url.searchParams.get("only");
+  const subset = only ? new Set(only.split(",").map((s) => s.trim())) : null;
+  const want   = (key: string) => !subset || subset.has(key);
+
   try {
     const [
       clientes,
@@ -58,17 +70,17 @@ export async function GET() {
       pedido3mfs,
       compImpressoras,
     ] = await Promise.all([
-      supabase.from("cadastro_clientes").select("*").order("id_cliente", { ascending: true }),
-      supabase.from("cadastro_impressoras").select("*").order("id_impressora", { ascending: true }),
-      supabase.from("cadastro_componentes").select("*").order("id_componente_stl", { ascending: true }),
-      supabase.from("cadastro_3mf").select("id_linha, id_3mf, nome_arquivo_3mf, id_componente_stl, qtd_componente").order("id_3mf", { ascending: true }).order("id_linha", { ascending: true }),
-      supabase.from("cadastro_filamentos").select("*").order("id_filamento", { ascending: true }),
-      supabase.from("cadastro_fabricantes_filamentos").select("*").order("nome_fabricante", { ascending: true }),
-      supabase.from("cadastro_pedidos").select("*").order("id_pedido", { ascending: true }),
-      supabase.from("execucao_fabric").select("*").order("id_fila", { ascending: true }),
-      supabase.from("plano_producao").select("*").order("id_pedido", { ascending: true }),
-      supabase.from("pedido_3mfs").select("id_pedido_3mf, id_pedido, id_3mf").order("id_pedido", { ascending: true }),
-      supabase.from("componente_impressoras").select("id_comp_imp, id_componente_stl, id_impressora, tempo_impressao_min").order("id_componente_stl", { ascending: true }),
+      want("clientes")              ? supabase.from("cadastro_clientes").select("*").order("id_cliente", { ascending: true })                                                                                                                                       : Promise.resolve({ data: [], error: null }),
+      want("impressoras")           ? supabase.from("cadastro_impressoras").select("*").order("id_impressora", { ascending: true })                                                                                                                                 : Promise.resolve({ data: [], error: null }),
+      want("componentes")           ? supabase.from("cadastro_componentes").select("*").order("id_componente_stl", { ascending: true })                                                                                                                             : Promise.resolve({ data: [], error: null }),
+      want("arquivos3mf")           ? supabase.from("cadastro_3mf").select("id_linha, id_3mf, nome_arquivo_3mf, id_componente_stl, qtd_componente").order("id_3mf", { ascending: true }).order("id_linha", { ascending: true })                                    : Promise.resolve({ data: [], error: null }),
+      want("filamentos")            ? supabase.from("cadastro_filamentos").select("*").order("id_filamento", { ascending: true })                                                                                                                                   : Promise.resolve({ data: [], error: null }),
+      want("fabricantesFilamentos") ? supabase.from("cadastro_fabricantes_filamentos").select("*").order("nome_fabricante", { ascending: true })                                                                                                                    : Promise.resolve({ data: [], error: null }),
+      want("pedidos")               ? supabase.from("cadastro_pedidos").select("*").order("id_pedido", { ascending: true })                                                                                                                                         : Promise.resolve({ data: [], error: null }),
+      want("execucoes")             ? supabase.from("execucao_fabric").select("*").order("id_fila", { ascending: true })                                                                                                                                            : Promise.resolve({ data: [], error: null }),
+      want("planoProducao")         ? supabase.from("plano_producao").select("*").order("id_pedido", { ascending: true })                                                                                                                                           : Promise.resolve({ data: [], error: null }),
+      want("pedido3mfs")            ? supabase.from("pedido_3mfs").select("id_pedido_3mf, id_pedido, id_3mf").order("id_pedido", { ascending: true })                                                                                                              : Promise.resolve({ data: [], error: null }),
+      want("compImpressoras")       ? supabase.from("componente_impressoras").select("id_comp_imp, id_componente_stl, id_impressora, tempo_impressao_min").order("id_componente_stl", { ascending: true })                                                          : Promise.resolve({ data: [], error: null }),
     ]);
 
     const errors = [
