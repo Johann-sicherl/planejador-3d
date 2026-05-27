@@ -30,7 +30,9 @@ export async function POST(request: NextRequest) {
       .select("id_estoque_linha, gramas_reservadas")
       .eq("id_pedido", id_pedido);
 
-    // 2. Zera qtd_reservada dos carretéis das reservas antigas.
+    // 2. Decrementa qtd_reservada dos carretéis das reservas antigas.
+    //    Registra o que foi decrementado para poder compensar se a inserção falhar.
+    const decrementados = new Map<number, number>();
     if (reservasAntigas?.length) {
       const porCarretelAntigas = new Map<number, number>();
       for (const r of reservasAntigas) {
@@ -40,16 +42,18 @@ export async function POST(request: NextRequest) {
         );
       }
       for (const [id_estoque, gramas] of porCarretelAntigas.entries()) {
-        const { data: row } = await supabase
+        const { data: row, error: eRead } = await supabase
           .from("estoque_j_ao_cubo")
           .select("qtd_reservada")
           .eq("id_estoque", id_estoque)
           .single();
+        if (eRead) continue; // pula silenciosamente — não bloqueia a operação principal
         const atual = Number(row?.qtd_reservada || 0);
-        await supabase
+        const { error: eUpd } = await supabase
           .from("estoque_j_ao_cubo")
           .update({ qtd_reservada: Math.max(0, Number((atual - gramas).toFixed(3))) })
           .eq("id_estoque", id_estoque);
+        if (!eUpd) decrementados.set(id_estoque, gramas);
       }
     }
 
@@ -58,7 +62,22 @@ export async function POST(request: NextRequest) {
 
     // 4. Insere novas reservas.
     const { error: errInsert } = await supabase.from("reservas_estoque").insert(reservas);
-    if (errInsert) return NextResponse.json({ ok: false, error: errInsert.message }, { status: 500 });
+    if (errInsert) {
+      // Compensação: re-incrementa qtd_reservada para as linhas que já decrementamos.
+      for (const [id_estoque, gramas] of decrementados.entries()) {
+        const { data: row } = await supabase
+          .from("estoque_j_ao_cubo")
+          .select("qtd_reservada")
+          .eq("id_estoque", id_estoque)
+          .single();
+        const atual = Number(row?.qtd_reservada || 0);
+        await supabase
+          .from("estoque_j_ao_cubo")
+          .update({ qtd_reservada: Number((atual + gramas).toFixed(3)) })
+          .eq("id_estoque", id_estoque);
+      }
+      return NextResponse.json({ ok: false, error: errInsert.message }, { status: 500 });
+    }
 
     // 5. Incrementa qtd_reservada apenas com as novas reservas.
     const porCarretelNovo = new Map<number, number>();

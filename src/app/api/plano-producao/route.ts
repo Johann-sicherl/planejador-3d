@@ -15,6 +15,7 @@ const FIELDS = [
   "progresso",
   "peso_estimado_g",
   "stls_concluidos",
+  "stl_carretel_map",
 ];
 
 const NUMERIC = [
@@ -38,6 +39,12 @@ function sanitize(body: Record<string, unknown>) {
       // Se vier null ou [] o caller quer limpar deliberadamente.
       if (value === undefined) continue;
       payload[field] = Array.isArray(value) ? value.map(Number) : [];
+      continue;
+    }
+    if (field === "stl_carretel_map") {
+      // JSONB: passa o objeto como-está; undefined → pula (preserva banco).
+      if (value === undefined) continue;
+      payload[field] = value === null ? null : (typeof value === "object" ? value : null);
       continue;
     }
     if (value === "" || value === undefined) continue;

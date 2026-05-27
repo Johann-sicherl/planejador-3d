@@ -6,7 +6,9 @@ const ID_COL = "id_componente_stl";
 const FIELDS = ["nome_componente", "id_filamento1", "id_filamento2", "id_filamento3", "id_filamento4", "id_filamento5", "id_filamento6", "id_filamento7", "id_filamento8", "gramas_filamento_1", "gramas_filamento_2", "gramas_filamento_3", "gramas_filamento_4", "gramas_filamento_5", "gramas_filamento_6", "gramas_filamento_7", "gramas_filamento_8", "tempo_impressao_min"];
 const NUMERIC = ["id_filamento1", "id_filamento2", "id_filamento3", "id_filamento4", "id_filamento5", "id_filamento6", "id_filamento7", "id_filamento8", "gramas_filamento_1", "gramas_filamento_2", "gramas_filamento_3", "gramas_filamento_4", "gramas_filamento_5", "gramas_filamento_6", "gramas_filamento_7", "gramas_filamento_8", "tempo_impressao_min"];
 
-const PAGE_LIMIT_DEFAULT = 100;
+// Default alto o suficiente para carregar toda a base de componentes de uma vez.
+// O frontend não tem UI de paginação — um limit pequeno truncaria a listagem silenciosamente.
+const PAGE_LIMIT_DEFAULT = 500;
 
 function sanitize(body: Record<string, unknown>) {
   const payload: Record<string, unknown> = {};
@@ -29,8 +31,10 @@ export async function GET(request: NextRequest) {
   const limitParam = url.searchParams.get("limit");
   const pageParam  = url.searchParams.get("page");
 
-  const limit = limitParam ? Math.max(1, Math.min(500, Number(limitParam))) : PAGE_LIMIT_DEFAULT;
-  const page  = pageParam  ? Math.max(1, Number(pageParam)) : 1;
+  const limitRaw = Number(limitParam);
+  const pageRaw  = Number(pageParam);
+  const limit = limitParam && !Number.isNaN(limitRaw) ? Math.max(1, Math.min(500, limitRaw)) : PAGE_LIMIT_DEFAULT;
+  const page  = pageParam  && !Number.isNaN(pageRaw)  ? Math.max(1, pageRaw) : 1;
   const from  = (page - 1) * limit;
   const to    = from + limit - 1;
 

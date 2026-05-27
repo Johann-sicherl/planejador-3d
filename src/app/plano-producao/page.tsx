@@ -757,13 +757,25 @@ export default function PlanoProducaoPage() {
   async function salvarStlsConcluidos(idPedido: number, stls: number[], progresso: number) {
     const planoAtual = planos.find((p) => p.id_pedido === idPedido);
     if (!planoAtual) return;
+    // Atualização otimista — reverte se o PUT falhar.
     setPlanos((prev) => prev.map((p) =>
       p.id_pedido === idPedido ? { ...p, stls_concluidos: stls, progresso } : p
     ));
-    await fetch("/api/plano-producao", {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...planoAtual, stls_concluidos: stls, progresso }),
-    });
+    try {
+      const r = await fetch("/api/plano-producao", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...planoAtual, stls_concluidos: stls, progresso }),
+      });
+      const res = await r.json();
+      if (!r.ok || !res.ok) throw new Error(res.error || "Erro ao salvar progresso.");
+    } catch {
+      // Rollback: reverte para o estado anterior do banco.
+      setPlanos((prev) => prev.map((p) =>
+        p.id_pedido === idPedido
+          ? { ...p, stls_concluidos: planoAtual.stls_concluidos, progresso: planoAtual.progresso ?? 0 }
+          : p
+      ));
+    }
   }
 
   // Registra falha: mantém STL no card original, cria cópia na coluna Falha
@@ -1094,7 +1106,7 @@ export default function PlanoProducaoPage() {
               );
             })}
           </section>
-          <DragOverlay>{activePlano?<CardPlano plano={activePlano} nomes={nomes} flutuando />:null}</DragOverlay>
+          <DragOverlay>{activePlano?<CardPlano plano={activePlano} nomes={nomes} flutuando onSalvarStls={salvarStlsConcluidos} />:null}</DragOverlay>
         </DndContext>
       )}
 
