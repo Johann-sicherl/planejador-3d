@@ -257,19 +257,39 @@ export default function Page() {
     }
   }
 
-  // Opções únicas por coluna
-  const opcoesNome      = [...new Set(data.map((r) => r.nome_filamento     ?? "-"))].sort();
-  const opcoesMaterial  = [...new Set(data.map((r) => r.material_filamento  ?? "-"))].sort();
-  const opcoesCor       = [...new Set(data.map((r) => r.cor_filamento       ?? "-"))].sort();
-  const opcoesCarretel  = [...new Set(data.map((r) => r.tipo_carretel       ?? "-"))].sort();
-  const opcoesFornecedor= [...new Set(data.map((r) => r.fabricante?.nome_fabricante ?? "-"))].sort();
-
-  // Filtragem direta no render
+  // Sets derivados dos filtros ativos
   const nomeSet      = new Set(filtroNome);
   const materialSet  = new Set(filtroMaterial);
   const corSet       = new Set(filtroCor);
   const carretelSet  = new Set(filtroCarretel);
   const fornecSet    = new Set(filtroFornecedor);
+
+  // Filtros dinâmicos (faceted search): cada coluna exibe apenas os valores
+  // presentes nos registros que passam por TODOS os outros filtros ativos,
+  // excluindo o filtro da própria coluna. Assim ao filtrar por Material=PLA,
+  // os dropdowns de Cor e Fornecedor atualizam para mostrar só o que existe em PLA.
+  function filtrarSemColuna(excluir: "nome" | "material" | "cor" | "carretel" | "fornecedor") {
+    return data.filter((r) => {
+      const nome     = r.nome_filamento              ?? "-";
+      const material = r.material_filamento          ?? "-";
+      const cor      = r.cor_filamento               ?? "-";
+      const carretel = r.tipo_carretel               ?? "-";
+      const fornec   = r.fabricante?.nome_fabricante ?? "-";
+      return (
+        (excluir === "nome"       || nomeSet.size     === 0 || nomeSet.has(nome))         &&
+        (excluir === "material"   || materialSet.size === 0 || materialSet.has(material)) &&
+        (excluir === "cor"        || corSet.size      === 0 || corSet.has(cor))           &&
+        (excluir === "carretel"   || carretelSet.size === 0 || carretelSet.has(carretel)) &&
+        (excluir === "fornecedor" || fornecSet.size   === 0 || fornecSet.has(fornec))
+      );
+    });
+  }
+
+  const opcoesNome       = [...new Set(filtrarSemColuna("nome").map((r)       => r.nome_filamento              ?? "-"))].sort();
+  const opcoesMaterial   = [...new Set(filtrarSemColuna("material").map((r)   => r.material_filamento          ?? "-"))].sort();
+  const opcoesCor        = [...new Set(filtrarSemColuna("cor").map((r)        => r.cor_filamento               ?? "-"))].sort();
+  const opcoesCarretel   = [...new Set(filtrarSemColuna("carretel").map((r)   => r.tipo_carretel               ?? "-"))].sort();
+  const opcoesFornecedor = [...new Set(filtrarSemColuna("fornecedor").map((r) => r.fabricante?.nome_fabricante ?? "-"))].sort();
 
   const dataFiltrada = data.filter((r) => {
     const nome     = r.nome_filamento           ?? "-";
