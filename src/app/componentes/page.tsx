@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Filter, Plus, Trash2, X } from "lucide-react";
+import { Calculator, ChevronDown, Filter, Plus, Trash2, X } from "lucide-react";
 import {
   ActionButtons,
   Feedback,
@@ -196,6 +196,19 @@ export default function Page() {
 
   const [tempo_impressao_min, setTempoImpressaoMin] = useState("");
   const [compImps, setCompImps] = useState<CompImpressora[]>([]);
+
+  // ── Calculadora dias/horas/minutos ─────────────────────────────────────────
+  const [showCalcModal, setShowCalcModal] = useState(false);
+  const [calcDias,    setCalcDias]    = useState("");
+  const [calcHoras,   setCalcHoras]   = useState("");
+  const [calcMinutos, setCalcMinutos] = useState("");
+
+  function calcularMinutosTotais() {
+    const d = Number(calcDias)    || 0;
+    const h = Number(calcHoras)   || 0;
+    const m = Number(calcMinutos) || 0;
+    return d * 24 * 60 + h * 60 + m;
+  }
 
   // ── Filtros da lista ───────────────────────────────────────────────────────
   const [filtroNome,       setFiltroNome]       = useState<string[]>([]);
@@ -553,9 +566,67 @@ export default function Page() {
         {/* Tempo padrão */}
         <div className="mt-4 max-w-xs">
           <label className="mb-2 block text-sm font-bold text-slate-300">Tempo padrão de impressão (min)</label>
-          <input type="number" min="0" value={tempo_impressao_min}
-            onChange={(e) => setTempoImpressaoMin(e.target.value)} placeholder="Ex.: 51"
-            className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none focus:border-cyan-400" />
+          <div className="flex items-center gap-2">
+            <input type="number" min="0" value={tempo_impressao_min}
+              onChange={(e) => setTempoImpressaoMin(e.target.value)} placeholder="Ex.: 51"
+              className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none focus:border-cyan-400" />
+            <button type="button" title="Converter dias / horas / minutos"
+              onClick={() => setShowCalcModal((prev) => !prev)}
+              className="shrink-0 rounded-xl border border-cyan-400/30 bg-cyan-400/10 p-2.5 text-cyan-300 hover:bg-cyan-400/20">
+              <Calculator className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Modal calculadora */}
+          {showCalcModal && (
+            <div className="mt-2 rounded-2xl border border-white/10 bg-slate-900 p-4 shadow-xl">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-xs font-bold text-slate-300">Converter para minutos</p>
+                <button type="button" onClick={() => setShowCalcModal(false)}
+                  className="text-slate-500 hover:text-slate-300">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              <div className="flex gap-2">
+                <label className="flex-1">
+                  <span className="mb-1 block text-center text-xs text-slate-500">Dias</span>
+                  <input type="number" min="0" value={calcDias}
+                    onChange={(e) => setCalcDias(e.target.value)} placeholder="0"
+                    className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-2 py-2 text-center text-slate-100 outline-none focus:border-cyan-400" />
+                </label>
+                <label className="flex-1">
+                  <span className="mb-1 block text-center text-xs text-slate-500">Horas</span>
+                  <input type="number" min="0" max="23" value={calcHoras}
+                    onChange={(e) => setCalcHoras(e.target.value)} placeholder="0"
+                    className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-2 py-2 text-center text-slate-100 outline-none focus:border-cyan-400" />
+                </label>
+                <label className="flex-1">
+                  <span className="mb-1 block text-center text-xs text-slate-500">Minutos</span>
+                  <input type="number" min="0" max="59" value={calcMinutos}
+                    onChange={(e) => setCalcMinutos(e.target.value)} placeholder="0"
+                    className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-2 py-2 text-center text-slate-100 outline-none focus:border-cyan-400" />
+                </label>
+              </div>
+
+              <div className="mt-3 flex items-center justify-between">
+                <span className="text-sm text-slate-400">
+                  Total:{" "}
+                  <span className="font-black text-cyan-300">{calcularMinutosTotais()} min</span>
+                </span>
+                <button type="button"
+                  onClick={() => {
+                    setTempoImpressaoMin(String(calcularMinutosTotais()));
+                    setShowCalcModal(false);
+                    setCalcDias(""); setCalcHoras(""); setCalcMinutos("");
+                  }}
+                  className="rounded-xl bg-cyan-400 px-4 py-1.5 text-xs font-black text-slate-950 hover:bg-cyan-300">
+                  Aplicar
+                </button>
+              </div>
+            </div>
+          )}
+
           <p className="mt-1 text-xs text-slate-500">Usado quando não há impressora específica cadastrada</p>
         </div>
 
