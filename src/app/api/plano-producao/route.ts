@@ -33,6 +33,10 @@ function sanitize(body: Record<string, unknown>) {
   for (const field of FIELDS) {
     const value = body[field];
     if (field === "stls_concluidos") {
+      // Só inclui no payload quando o campo foi explicitamente enviado.
+      // Se vier undefined (não enviado), pula — assim o valor no banco é preservado.
+      // Se vier null ou [] o caller quer limpar deliberadamente.
+      if (value === undefined) continue;
       payload[field] = Array.isArray(value) ? value.map(Number) : [];
       continue;
     }

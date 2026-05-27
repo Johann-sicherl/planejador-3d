@@ -748,6 +748,24 @@ export default function PlanoProducaoPage() {
     });
   }
 
+  /**
+   * Salva stls_concluidos + progresso em um único PUT atômico.
+   * Usado pelo checkbox do card para evitar a race condition que apagava
+   * as marcações: antes havia dois PUTs (atualizarProgresso + direto) e
+   * o de atualizarProgresso não incluía stls_concluidos, sobrescrevendo com [].
+   */
+  async function salvarStlsConcluidos(idPedido: number, stls: number[], progresso: number) {
+    const planoAtual = planos.find((p) => p.id_pedido === idPedido);
+    if (!planoAtual) return;
+    setPlanos((prev) => prev.map((p) =>
+      p.id_pedido === idPedido ? { ...p, stls_concluidos: stls, progresso } : p
+    ));
+    await fetch("/api/plano-producao", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...planoAtual, stls_concluidos: stls, progresso }),
+    });
+  }
+
   // Registra falha: mantém STL no card original, cria cópia na coluna Falha
   async function registrarFalhaStls(idPedido: number, stlsComFalha: number[], gramasPerdidoStr: string, tempoPerdido: string) {
     const planoAtual = planos.find((p) => p.id_pedido === idPedido);
@@ -1063,6 +1081,7 @@ export default function PlanoProducaoPage() {
                   onFalhaConfirm={confirmarFalha} onFalhaCancel={cancelarFalha}
                   onRegistrarFalhaStls={registrarFalhaStls}
                   onAtualizarProgresso={atualizarProgresso}
+                  onSalvarStls={salvarStlsConcluidos}
                   finalizacaoEmAndamento={finalizacaoEmAndamento}
                   onFinSlotChange={(idx,val)=>setFinalizacaoEmAndamento((prev)=>prev?{...prev,slots:prev.slots.map((s,j)=>j===idx?{...s,idEstoqueEscolhido:val}:s)}:null)}
                   onFinConfirm={confirmarFinalizacao} onFinCancel={cancelarFinalizacao}
@@ -1106,13 +1125,14 @@ function Indicador({titulo,valor,subtitulo,vermelho=false}:{titulo:string;valor:
   );
 }
 
-function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,falhaCarretelEmAndamento,onFalhaCarretelSlotChange,onFalhaCarretelSlotGramas,onFalhaCarretelTempo,onFalhaCarretelConfirm,onFalhaCarretelCancel,onMover,onEdit,onDelete}:{
+function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,onSalvarStls,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,falhaCarretelEmAndamento,onFalhaCarretelSlotChange,onFalhaCarretelSlotGramas,onFalhaCarretelTempo,onFalhaCarretelConfirm,onFalhaCarretelCancel,onMover,onEdit,onDelete}:{
   coluna:{id:StatusProducao;titulo:string;subtitulo:string;bordaTopo:string};
   planos:PlanoProducao[]; nomes:Nomes; options:OptionsPayload|null; falhaEmAndamento:FalhaEmAndamento|null;
   onFalhaChange:(field:"gramasPerdido"|"tempoPerdido",value:string)=>void;
   onFalhaConfirm:()=>void; onFalhaCancel:()=>void;
   onRegistrarFalhaStls:(idPedido:number,stls:number[],gramas:string,tempo:string)=>void;
   onAtualizarProgresso:(idPedido:number,progresso:number)=>void;
+  onSalvarStls:(idPedido:number,stls:number[],progresso:number)=>void;
   finalizacaoEmAndamento:FinalizacaoEmAndamento|null;
   onFinSlotChange:(idx:number,val:string)=>void;
   onFinConfirm:()=>void; onFinCancel:()=>void;
@@ -1144,7 +1164,7 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
             <CardPlano key={plano.id_pedido} plano={plano} nomes={nomes} options={options}
               falhaEmAndamento={falhaEmAndamento?.idPedido===plano.id_pedido?falhaEmAndamento:null}
               onFalhaChange={onFalhaChange} onFalhaConfirm={onFalhaConfirm} onFalhaCancel={onFalhaCancel}
-              onRegistrarFalhaStls={onRegistrarFalhaStls} onAtualizarProgresso={onAtualizarProgresso}
+              onRegistrarFalhaStls={onRegistrarFalhaStls} onAtualizarProgresso={onAtualizarProgresso} onSalvarStls={onSalvarStls}
               finalizacaoEmAndamento={finalizacaoEmAndamento?.idPedido===plano.id_pedido?finalizacaoEmAndamento:null}
               onFinSlotChange={onFinSlotChange} onFinConfirm={onFinConfirm} onFinCancel={onFinCancel}
               falhaCarretelEmAndamento={falhaCarretelEmAndamento?.idPedido===plano.id_pedido?falhaCarretelEmAndamento:null}
@@ -1159,12 +1179,13 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
   );
 }
 
-function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,falhaCarretelEmAndamento,onFalhaCarretelSlotChange,onFalhaCarretelSlotGramas,onFalhaCarretelTempo,onFalhaCarretelConfirm,onFalhaCarretelCancel,onMover,onEdit,onDelete}:{
+function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,onSalvarStls,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,falhaCarretelEmAndamento,onFalhaCarretelSlotChange,onFalhaCarretelSlotGramas,onFalhaCarretelTempo,onFalhaCarretelConfirm,onFalhaCarretelCancel,onMover,onEdit,onDelete}:{
   plano:PlanoProducao; nomes:Nomes; options?:OptionsPayload|null; flutuando?:boolean; falhaEmAndamento?:FalhaEmAndamento|null;
   onFalhaChange?:(field:"gramasPerdido"|"tempoPerdido",value:string)=>void;
   onFalhaConfirm?:()=>void; onFalhaCancel?:()=>void;
   onRegistrarFalhaStls?:(idPedido:number,stls:number[],gramas:string,tempo:string)=>void;
   onAtualizarProgresso?:(idPedido:number,progresso:number)=>void;
+  onSalvarStls?:(idPedido:number,stls:number[],progresso:number)=>void;
   finalizacaoEmAndamento?:FinalizacaoEmAndamento|null;
   onFinSlotChange?:(idx:number,val:string)=>void;
   onFinConfirm?:()=>void; onFinCancel?:()=>void;
@@ -1416,7 +1437,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                         <div key={i} className={`rounded-lg transition-colors ${isConcluido?"bg-emerald-500/10":isFalhaStl?"bg-red-500/10":""}`}>
                           <div className="flex items-center gap-1.5 px-1.5 py-1">
                             <input type="checkbox" checked={isConcluido}
-                              onChange={async ()=>{
+                              onChange={()=>{
                                 const novo=isConcluido?stlsConcluidos.filter(x=>x!==lineId):[...stlsConcluidos,lineId];
                                 setStlsConcluidos(novo);
                                 // Progresso por tempo: soma tempo dos STLs concluídos / tempo total
@@ -1432,11 +1453,8 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                                   return acc+Number((c as Record<string,unknown>|undefined)?.tempo_impressao_min||0)*Number(l.qtd_componente||1);
                                 },0);
                                 const pct=tempoTotal>0?Math.min(Math.round((tempoConcluido/tempoTotal)*100),100):Math.round((novo.length/linhas.length)*100);
-                                onAtualizarProgresso?.(plano.id_pedido,Math.min(pct,100));
-                                await fetch("/api/plano-producao",{
-                                  method:"PUT",headers:{"Content-Type":"application/json"},
-                                  body:JSON.stringify({...plano,stls_concluidos:novo,progresso:Math.min(pct,100)}),
-                                });
+                                // PUT único com stls_concluidos + progresso — sem race condition.
+                                onSalvarStls?.(plano.id_pedido, novo, Math.min(pct, 100));
                               }}
                               className="h-3 w-3 accent-emerald-400 shrink-0 cursor-pointer" title="Concluido"/>
                             <span className={`flex-1 truncate text-xs ${isConcluido?"line-through text-slate-600":isFalhaStl?"text-red-400":"text-slate-400"}`}>{nome}</span>
