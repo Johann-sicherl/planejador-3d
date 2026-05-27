@@ -2,11 +2,12 @@ import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Fix #1 — Autenticação nas rotas de API.
+ * Proxy — Autenticação nas rotas de API (Next.js 16+).
  * Todas as rotas /api/* exigem sessão Supabase válida.
  * Requisições sem sessão recebem 401 JSON em vez de dados.
+ * (Antes chamado de middleware.ts; renomeado conforme convenção do Next.js 16.)
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Só protege rotas de API
