@@ -242,10 +242,29 @@ export default function Page() {
     return true;
   });
 
-  const opcoesNome     = [...new Set(todasAsLinhas.map((r) => r.nome))].sort();
-  const opcoesCor      = [...new Set(todasAsLinhas.map((r) => r.cor))].sort();
-  const opcoesLocal    = [...new Set(todasAsLinhas.map((r) => r.local))].sort();
-  const opcoesCarretel = [...new Set(todasAsLinhas.map((r) => r.carretel))].sort();
+  // Filtros dinâmicos (faceted search): cada coluna exibe apenas os valores
+  // presentes nos registros que passam por TODOS os outros filtros ativos,
+  // excluindo o filtro da própria coluna.
+  function filtrarEstoqueSem(excluir: "nome" | "cor" | "local" | "carretel") {
+    return todasAsLinhas.filter((r) => {
+      const passaTexto =
+        (excluir === "nome"     || nomeSet.size     === 0 || nomeSet.has(r.nome))      &&
+        (excluir === "cor"      || corSet.size      === 0 || corSet.has(r.cor))        &&
+        (excluir === "local"    || localSet.size    === 0 || localSet.has(r.local))    &&
+        (excluir === "carretel" || carretelSet.size === 0 || carretelSet.has(r.carretel));
+      if (!passaTexto) return false;
+      if (filtroLiquidoOp === "" || valorNum === null || r.liquido === null) return true;
+      if (filtroLiquidoOp === ">") return r.liquido >  valorNum;
+      if (filtroLiquidoOp === "<") return r.liquido <  valorNum;
+      if (filtroLiquidoOp === "=") return r.liquido === valorNum;
+      return true;
+    });
+  }
+
+  const opcoesNome     = [...new Set(filtrarEstoqueSem("nome").map((r)     => r.nome))].sort();
+  const opcoesCor      = [...new Set(filtrarEstoqueSem("cor").map((r)      => r.cor))].sort();
+  const opcoesLocal    = [...new Set(filtrarEstoqueSem("local").map((r)    => r.local))].sort();
+  const opcoesCarretel = [...new Set(filtrarEstoqueSem("carretel").map((r) => r.carretel))].sort();
 
   const algumFiltroAtivo =
     filtroNome.length > 0 || filtroCor.length > 0 || filtroLocal.length > 0 || filtroCarretel.length > 0 ||
