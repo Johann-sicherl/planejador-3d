@@ -75,6 +75,30 @@ export async function DELETE(request: NextRequest) {
     const url = new URL(request.url);
     const id = url.searchParams.get("id");
     if (!id) return NextResponse.json({ ok: false, error: "ID nao informado." }, { status: 400 });
+
+    // Fix #10 — Impede exclusão se o filamento está referenciado em componentes.
+    // Verifica todos os 8 slots de filamento possíveis.
+    const conditions = Array.from({ length: 8 }, (_, i) => `id_filamento${i + 1}.eq.${id}`).join(",");
+    const { data: usos, error: eCheck } = await supabase
+      .from("cadastro_componentes")
+      .select("id_componente_stl, nome_componente")
+      .or(conditions)
+      .limit(5);
+
+    if (eCheck) {
+      return NextResponse.json({ ok: false, error: `Erro ao verificar dependências: ${eCheck.message}` }, { status: 500 });
+    }
+    if (usos && usos.length > 0) {
+      const nomes = usos.map((c) => c.nome_componente ?? `ID ${c.id_componente_stl}`).join(", ");
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Não é possível excluir este filamento pois ele está em uso nos componentes: ${nomes}. Remova o filamento dos componentes antes de excluí-lo.`,
+        },
+        { status: 409 },
+      );
+    }
+
     const { error } = await supabase.from(TABLE).delete().eq(ID_COL, id);
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true });

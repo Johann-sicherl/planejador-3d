@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
   PointerSensor, useDroppable, useSensor, useSensors,
@@ -142,10 +142,23 @@ function calcPeso3mf(opts: OptionsPayload|null, id3mfStr: string) {
 function calcPesoPedido(opts: OptionsPayload|null, idPedStr: string) {
   if (!opts||!idPedStr) return "";
   const idPed=Number(idPedStr); if (Number.isNaN(idPed)) return "";
-  const ped=(opts.pedidos||[]).find((i)=>Number(i.id_pedido)===idPed);
-  const id3mf=numField(ped,["id_3mf","id_arquivo_3mf","id_arquivo"]);
-  if (id3mf===null) return "";
-  return calcPeso3mf(opts,String(id3mf));
+  // Gather all 3MF ids for this pedido
+  const ids3mf=(opts.pedido3mfs||[])
+    .filter((p)=>Number(p.id_pedido)===idPed)
+    .map((p)=>Number(p.id_3mf));
+  if (!ids3mf.length) {
+    // Fallback: use id_3mf from pedido record
+    const ped=(opts.pedidos||[]).find((i)=>Number(i.id_pedido)===idPed);
+    const id3mf=numField(ped,["id_3mf","id_arquivo_3mf","id_arquivo"]);
+    if (id3mf===null) return "";
+    return calcPeso3mf(opts,String(id3mf));
+  }
+  let total=0;
+  for (const id3mf of ids3mf) {
+    const p=calcPeso3mf(opts,String(id3mf));
+    if (p) total+=Number(p);
+  }
+  return total>0?String(Number(total.toFixed(3))):"";
 }
 
 export default function PlanoProducaoPage() {
@@ -166,6 +179,7 @@ export default function PlanoProducaoPage() {
   const [sugestaoImp,setSugestaoImp]=useState<{idImpressora:number;nomeImpressora:string;tempoMin:number}|null>(null);
   const [falhaCarretelEmAndamento,setFalhaCarretelEmAndamento]=useState<FalhaCarretelEmAndamento|null>(null);
   const [finalizacaoEmAndamento,setFinalizacaoEmAndamento]=useState<FinalizacaoEmAndamento|null>(null);
+  const savingRef = useRef(false);
 
   const sensors=useSensors(useSensor(PointerSensor,{activationConstraint:{distance:8}}));
 
@@ -305,6 +319,8 @@ export default function PlanoProducaoPage() {
 
   async function salvarPlano(event:React.FormEvent) {
     event.preventDefault();
+    if (savingRef.current) return;
+    savingRef.current = true;
     try {
       setSaving(true); setErro(""); setMensagem("");
       // id_3mf = primeiro 3MF do pedido (para compatibilidade com banco)
@@ -363,7 +379,11 @@ export default function PlanoProducaoPage() {
         // 3. FFD: ordena STLs do maior para o menor consumo, aloca no primeiro carretel com saldo
         const stlCarretelMap:Record<number,number>={};
         const reservas:Record<number,number>={}; // id_linha_estoque → gramas reservadas nesta rodada
-        const necessidadesOrdenadas=[...necessidades].sort((a,b)=>b.gramas-a.gramas);
+        const necessidadesOrdenadas=[...necessidades].sort((a,b)=>
+          a.id_filamento!==b.id_filamento
+            ? a.id_filamento-b.id_filamento
+            : b.gramas-a.gramas
+        );
 
         for (const nec of necessidadesOrdenadas) {
           const candidatos=carreteis.filter(c=>c.id_filamento===nec.id_filamento&&c.saldo>=nec.gramas);
@@ -396,7 +416,7 @@ export default function PlanoProducaoPage() {
       setFormOpen(false); setEditingId(null); setForm(EMPTY_FORM);
       await carregarDados();
     } catch(err) { setErro(err instanceof Error?err.message:"Erro ao salvar."); }
-    finally { setSaving(false); }
+    finally { setSaving(false); savingRef.current = false; }
   }
 
   const ORDEM_COLUNAS: StatusProducao[] = ["pedidos","fila","producao","finalizado","falha"];
@@ -531,34 +551,8 @@ export default function PlanoProducaoPage() {
         setMensagem("Pedido finalizado.");
         return;
       }
-      // Debita direto, sem abrir modal
-      setPlanos((prev) => prev.map((p) => p.id_pedido === idPedido ? { ...p, status_producao: "finalizado", progresso: 100 } : p));
-      setFinalizacaoEmAndamento({ idPedido, statusAnterior: planoAtual.status_producao || "pedidos", slots, salvando: true });
-      try {
-        const r1 = await fetch("/api/plano-producao", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...planoAtual, status_producao: "finalizado", progresso: 100 }) });
-        const d1 = await r1.json();
-        if (!r1.ok || !d1.ok) throw new Error(d1.error || "Erro ao finalizar.");
-        for (const slot of slots) {
-          if (!slot.idEstoqueEscolhido) continue;
-          const parts = slot.idEstoqueEscolhido.split("_");
-          const idFilStr = parts[0];
-          const localizacao = parts.slice(1, -1).join("_");
-          const idx = Number(parts[parts.length - 1]);
-          await fetch("/api/estoque-debito", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id_filamento: Number(idFilStr), localizacao: localizacao || undefined, idx: Number.isNaN(idx) ? 0 : idx, gramas: slot.gramas }),
-          });
-        }
-        setMensagem("Pedido finalizado e estoque debitado automaticamente.");
-        setFinalizacaoEmAndamento(null);
-        // Libera reservas — o débito real já foi feito acima
-        await fetch(`/api/reservas-estoque?id_pedido=${idPedido}`,{method:"DELETE"});
-        await carregarDados();
-      } catch (err) {
-        setPlanos((prev) => prev.map((p) => p.id_pedido === idPedido ? { ...p, status_producao: planoAtual.status_producao || "pedidos" } : p));
-        setErro(err instanceof Error ? err.message : "Erro ao finalizar.");
-        setFinalizacaoEmAndamento(null);
-      }
+      // Abre modal para o usuário confirmar antes de debitar
+      setFinalizacaoEmAndamento({ idPedido, statusAnterior: planoAtual.status_producao || "pedidos", slots, salvando: false });
       return;
     }
 
@@ -751,6 +745,24 @@ export default function PlanoProducaoPage() {
     await fetch("/api/plano-producao", {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...planoAtual, progresso: novoProgresso }),
+    });
+  }
+
+  /**
+   * Salva stls_concluidos + progresso em um único PUT atômico.
+   * Usado pelo checkbox do card para evitar a race condition que apagava
+   * as marcações: antes havia dois PUTs (atualizarProgresso + direto) e
+   * o de atualizarProgresso não incluía stls_concluidos, sobrescrevendo com [].
+   */
+  async function salvarStlsConcluidos(idPedido: number, stls: number[], progresso: number) {
+    const planoAtual = planos.find((p) => p.id_pedido === idPedido);
+    if (!planoAtual) return;
+    setPlanos((prev) => prev.map((p) =>
+      p.id_pedido === idPedido ? { ...p, stls_concluidos: stls, progresso } : p
+    ));
+    await fetch("/api/plano-producao", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...planoAtual, stls_concluidos: stls, progresso }),
     });
   }
 
@@ -1069,6 +1081,7 @@ export default function PlanoProducaoPage() {
                   onFalhaConfirm={confirmarFalha} onFalhaCancel={cancelarFalha}
                   onRegistrarFalhaStls={registrarFalhaStls}
                   onAtualizarProgresso={atualizarProgresso}
+                  onSalvarStls={salvarStlsConcluidos}
                   finalizacaoEmAndamento={finalizacaoEmAndamento}
                   onFinSlotChange={(idx,val)=>setFinalizacaoEmAndamento((prev)=>prev?{...prev,slots:prev.slots.map((s,j)=>j===idx?{...s,idEstoqueEscolhido:val}:s)}:null)}
                   onFinConfirm={confirmarFinalizacao} onFinCancel={cancelarFinalizacao}
@@ -1112,13 +1125,14 @@ function Indicador({titulo,valor,subtitulo,vermelho=false}:{titulo:string;valor:
   );
 }
 
-function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,falhaCarretelEmAndamento,onFalhaCarretelSlotChange,onFalhaCarretelSlotGramas,onFalhaCarretelTempo,onFalhaCarretelConfirm,onFalhaCarretelCancel,onMover,onEdit,onDelete}:{
+function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,onSalvarStls,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,falhaCarretelEmAndamento,onFalhaCarretelSlotChange,onFalhaCarretelSlotGramas,onFalhaCarretelTempo,onFalhaCarretelConfirm,onFalhaCarretelCancel,onMover,onEdit,onDelete}:{
   coluna:{id:StatusProducao;titulo:string;subtitulo:string;bordaTopo:string};
   planos:PlanoProducao[]; nomes:Nomes; options:OptionsPayload|null; falhaEmAndamento:FalhaEmAndamento|null;
   onFalhaChange:(field:"gramasPerdido"|"tempoPerdido",value:string)=>void;
   onFalhaConfirm:()=>void; onFalhaCancel:()=>void;
   onRegistrarFalhaStls:(idPedido:number,stls:number[],gramas:string,tempo:string)=>void;
   onAtualizarProgresso:(idPedido:number,progresso:number)=>void;
+  onSalvarStls:(idPedido:number,stls:number[],progresso:number)=>void;
   finalizacaoEmAndamento:FinalizacaoEmAndamento|null;
   onFinSlotChange:(idx:number,val:string)=>void;
   onFinConfirm:()=>void; onFinCancel:()=>void;
@@ -1150,7 +1164,7 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
             <CardPlano key={plano.id_pedido} plano={plano} nomes={nomes} options={options}
               falhaEmAndamento={falhaEmAndamento?.idPedido===plano.id_pedido?falhaEmAndamento:null}
               onFalhaChange={onFalhaChange} onFalhaConfirm={onFalhaConfirm} onFalhaCancel={onFalhaCancel}
-              onRegistrarFalhaStls={onRegistrarFalhaStls} onAtualizarProgresso={onAtualizarProgresso}
+              onRegistrarFalhaStls={onRegistrarFalhaStls} onAtualizarProgresso={onAtualizarProgresso} onSalvarStls={onSalvarStls}
               finalizacaoEmAndamento={finalizacaoEmAndamento?.idPedido===plano.id_pedido?finalizacaoEmAndamento:null}
               onFinSlotChange={onFinSlotChange} onFinConfirm={onFinConfirm} onFinCancel={onFinCancel}
               falhaCarretelEmAndamento={falhaCarretelEmAndamento?.idPedido===plano.id_pedido?falhaCarretelEmAndamento:null}
@@ -1165,12 +1179,13 @@ function ColunaProducao({coluna,planos,nomes,options,falhaEmAndamento,onFalhaCha
   );
 }
 
-function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,falhaCarretelEmAndamento,onFalhaCarretelSlotChange,onFalhaCarretelSlotGramas,onFalhaCarretelTempo,onFalhaCarretelConfirm,onFalhaCarretelCancel,onMover,onEdit,onDelete}:{
+function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalhaChange,onFalhaConfirm,onFalhaCancel,onRegistrarFalhaStls,onAtualizarProgresso,onSalvarStls,finalizacaoEmAndamento,onFinSlotChange,onFinConfirm,onFinCancel,falhaCarretelEmAndamento,onFalhaCarretelSlotChange,onFalhaCarretelSlotGramas,onFalhaCarretelTempo,onFalhaCarretelConfirm,onFalhaCarretelCancel,onMover,onEdit,onDelete}:{
   plano:PlanoProducao; nomes:Nomes; options?:OptionsPayload|null; flutuando?:boolean; falhaEmAndamento?:FalhaEmAndamento|null;
   onFalhaChange?:(field:"gramasPerdido"|"tempoPerdido",value:string)=>void;
   onFalhaConfirm?:()=>void; onFalhaCancel?:()=>void;
   onRegistrarFalhaStls?:(idPedido:number,stls:number[],gramas:string,tempo:string)=>void;
   onAtualizarProgresso?:(idPedido:number,progresso:number)=>void;
+  onSalvarStls?:(idPedido:number,stls:number[],progresso:number)=>void;
   finalizacaoEmAndamento?:FinalizacaoEmAndamento|null;
   onFinSlotChange?:(idx:number,val:string)=>void;
   onFinConfirm?:()=>void; onFinCancel?:()=>void;
@@ -1422,7 +1437,7 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                         <div key={i} className={`rounded-lg transition-colors ${isConcluido?"bg-emerald-500/10":isFalhaStl?"bg-red-500/10":""}`}>
                           <div className="flex items-center gap-1.5 px-1.5 py-1">
                             <input type="checkbox" checked={isConcluido}
-                              onChange={async ()=>{
+                              onChange={()=>{
                                 const novo=isConcluido?stlsConcluidos.filter(x=>x!==lineId):[...stlsConcluidos,lineId];
                                 setStlsConcluidos(novo);
                                 // Progresso por tempo: soma tempo dos STLs concluídos / tempo total
@@ -1438,11 +1453,8 @@ function CardPlano({plano,nomes,options,flutuando=false,falhaEmAndamento,onFalha
                                   return acc+Number((c as Record<string,unknown>|undefined)?.tempo_impressao_min||0)*Number(l.qtd_componente||1);
                                 },0);
                                 const pct=tempoTotal>0?Math.min(Math.round((tempoConcluido/tempoTotal)*100),100):Math.round((novo.length/linhas.length)*100);
-                                onAtualizarProgresso?.(plano.id_pedido,Math.min(pct,100));
-                                await fetch("/api/plano-producao",{
-                                  method:"PUT",headers:{"Content-Type":"application/json"},
-                                  body:JSON.stringify({...plano,stls_concluidos:novo,progresso:Math.min(pct,100)}),
-                                });
+                                // PUT único com stls_concluidos + progresso — sem race condition.
+                                onSalvarStls?.(plano.id_pedido, novo, Math.min(pct, 100));
                               }}
                               className="h-3 w-3 accent-emerald-400 shrink-0 cursor-pointer" title="Concluido"/>
                             <span className={`flex-1 truncate text-xs ${isConcluido?"line-through text-slate-600":isFalhaStl?"text-red-400":"text-slate-400"}`}>{nome}</span>

@@ -6,6 +6,8 @@ const ID_COL = "id_componente_stl";
 const FIELDS = ["nome_componente", "id_filamento1", "id_filamento2", "id_filamento3", "id_filamento4", "id_filamento5", "id_filamento6", "id_filamento7", "id_filamento8", "gramas_filamento_1", "gramas_filamento_2", "gramas_filamento_3", "gramas_filamento_4", "gramas_filamento_5", "gramas_filamento_6", "gramas_filamento_7", "gramas_filamento_8", "tempo_impressao_min"];
 const NUMERIC = ["id_filamento1", "id_filamento2", "id_filamento3", "id_filamento4", "id_filamento5", "id_filamento6", "id_filamento7", "id_filamento8", "gramas_filamento_1", "gramas_filamento_2", "gramas_filamento_3", "gramas_filamento_4", "gramas_filamento_5", "gramas_filamento_6", "gramas_filamento_7", "gramas_filamento_8", "tempo_impressao_min"];
 
+const PAGE_LIMIT_DEFAULT = 100;
+
 function sanitize(body: Record<string, unknown>) {
   const payload: Record<string, unknown> = {};
   for (const field of FIELDS) {
@@ -21,10 +23,25 @@ function sanitize(body: Record<string, unknown>) {
   return payload;
 }
 
-export async function GET() {
-  const { data, error } = await supabase.from(TABLE).select("*").order(ID_COL, { ascending: true });
+export async function GET(request: NextRequest) {
+  // Fix #7 — Paginação via ?page=N&limit=N (padrão: limit=100, sem offset = tudo de uma vez).
+  const url = new URL(request.url);
+  const limitParam = url.searchParams.get("limit");
+  const pageParam  = url.searchParams.get("page");
+
+  const limit = limitParam ? Math.max(1, Math.min(500, Number(limitParam))) : PAGE_LIMIT_DEFAULT;
+  const page  = pageParam  ? Math.max(1, Number(pageParam)) : 1;
+  const from  = (page - 1) * limit;
+  const to    = from + limit - 1;
+
+  const { data, error, count } = await supabase
+    .from(TABLE)
+    .select("*", { count: "exact" })
+    .order(ID_COL, { ascending: true })
+    .range(from, to);
+
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-  return NextResponse.json({ ok: true, data });
+  return NextResponse.json({ ok: true, data, total: count, page, limit });
 }
 
 export async function POST(request: NextRequest) {

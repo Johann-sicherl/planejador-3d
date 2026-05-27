@@ -9,12 +9,14 @@ export async function POST(request: NextRequest) {
     const idx         = body.idx !== undefined ? Number(body.idx) : null;
 
     if (Number.isNaN(idFilamento) || Number.isNaN(gramas) || gramas <= 0)
-      return NextResponse.json({ ok: false, error: "id_filamento e gramas validos sao obrigatorios." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "id_filamento e gramas válidos são obrigatórios." }, { status: 400 });
 
-    // Busca todos os registros do filamento ordenados (mesma ordem que a tela)
+    // Fix #2 — Seleciona id_estoque (PK) para evitar race condition.
+    // Antes, o UPDATE usava peso_com_carretel_g como identificador, o que
+    // quebrava se dois requests simultâneos lessem o mesmo valor antes de um deles atualizar.
     let query = supabase
       .from("estoque_j_ao_cubo")
-      .select("id_filamento, qtd_estoque_gramas, peso_com_carretel_g, localizacao")
+      .select("id_estoque, id_filamento, qtd_estoque_gramas, peso_com_carretel_g, localizacao")
       .eq("id_filamento", idFilamento)
       .order("qtd_estoque_gramas", { ascending: false });
 
@@ -23,29 +25,44 @@ export async function POST(request: NextRequest) {
     }
 
     const { data: registros, error: eFind } = await query;
-    if (eFind || !registros?.length)
-      return NextResponse.json({ ok: false, error: `Registro nao encontrado para filamento ${idFilamento}.` }, { status: 404 });
+    if (eFind) {
+      return NextResponse.json(
+        { ok: false, error: `Erro ao buscar estoque do filamento ${idFilamento}: ${eFind.message}` },
+        { status: 500 }
+      );
+    }
+    if (!registros?.length) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Nenhum carretel encontrado para o filamento ID ${idFilamento}${body.localizacao ? ` na localização "${body.localizacao}"` : ""}. Verifique se o filamento possui estoque cadastrado.`,
+        },
+        { status: 404 }
+      );
+    }
 
-    // Usa o índice para pegar o registro exato
     const reg = idx !== null && idx < registros.length ? registros[idx] : registros[0];
 
     const novoQtd   = Math.max(0, Number((Number(reg.qtd_estoque_gramas   || 0) - gramas).toFixed(3)));
     const novoBruto = Math.max(0, Number((Number(reg.peso_com_carretel_g  || 0) - gramas).toFixed(3)));
 
-    // Identifica a linha pelo valor original de peso_com_carretel_g (único por carretel)
+    // Fix #2 — Atualiza pela chave primária id_estoque (atômico e sem race condition).
     const { error: eUpdate } = await supabase
       .from("estoque_j_ao_cubo")
       .update({ qtd_estoque_gramas: novoQtd, peso_com_carretel_g: novoBruto })
-      .eq("id_filamento", idFilamento)
-      .eq("peso_com_carretel_g", reg.peso_com_carretel_g);
+      .eq("id_estoque", reg.id_estoque);
 
-    if (eUpdate)
-      return NextResponse.json({ ok: false, error: eUpdate.message }, { status: 500 });
+    if (eUpdate) {
+      return NextResponse.json(
+        { ok: false, error: `Erro ao atualizar carretel ${reg.id_estoque}: ${eUpdate.message}` },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ ok: true, novoQtd, novoBruto });
   } catch (err) {
     return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : "Erro interno." },
+      { ok: false, error: err instanceof Error ? err.message : "Erro interno ao debitar estoque." },
       { status: 500 }
     );
   }
